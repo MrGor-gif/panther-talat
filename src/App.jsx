@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import "./storage.js";
 import {
   Truck, ClipboardCheck, Camera, X, Check, AlertTriangle, ShieldCheck,
-  Lock, LogIn, Filter, ChevronLeft, Image as ImageIcon, Trash2, ListChecks,
+  Lock, LogIn, Filter, ChevronLeft, Image as ImageIcon, Trash2, ListChecks, Search,
 } from "lucide-react";
 import crestImg from "./assets/crest.jpeg";
 
@@ -141,6 +141,9 @@ export default function App() {
         ) : (
           <ManagerPage onError={(m) => showToast(m, "err")} />
         )}
+        <footer style={{ textAlign: "center", color: MUTED, fontSize: 12, marginTop: 28, paddingTop: 16, borderTop: "1px solid " + BORDER }}>
+          אתר זה נבנה ע"י גיא גורליק
+        </footer>
       </main>
       {toast && (
         <div className={"toast " + (toast.kind === "err" ? "toast-err" : "toast-ok")}>
@@ -481,6 +484,7 @@ function ManagerDatabase({ onError }) {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
+  const [q, setQ] = useState("");
   const [fCompany, setFCompany] = useState("");
   const [fDriver, setFDriver] = useState("");
   const [fCommander, setFCommander] = useState("");
@@ -506,12 +510,21 @@ function ManagerDatabase({ onError }) {
   const drivers = useMemo(() => [...new Set(records.map((r) => r.driver).filter(Boolean))].sort(), [records]);
   const commanders = useMemo(() => [...new Set(records.map((r) => r.commander).filter(Boolean))].sort(), [records]);
 
-  const filtered = useMemo(() => records.filter((r) =>
-    (!fCompany || r.company === fCompany) &&
-    (!fDriver || r.driver === fDriver) &&
-    (!fCommander || r.commander === fCommander) &&
-    (!fStatus || r.status === fStatus)
-  ), [records, fCompany, fDriver, fCommander, fStatus]);
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return records.filter((r) => {
+      if (fCompany && r.company !== fCompany) return false;
+      if (fDriver && r.driver !== fDriver) return false;
+      if (fCommander && r.commander !== fCommander) return false;
+      if (fStatus && r.status !== fStatus) return false;
+      if (needle) {
+        const hay = [r.vehicleNumber, r.driver, r.commander, r.company, r.mission, r.doresNumber, r.additionalFaults]
+          .filter(Boolean).join(" ").toLowerCase();
+        if (!hay.includes(needle)) return false;
+      }
+      return true;
+    });
+  }, [records, q, fCompany, fDriver, fCommander, fStatus]);
 
   const counts = useMemo(() => {
     const c = { red: 0, yellow: 0, green: 0 };
@@ -519,8 +532,8 @@ function ManagerDatabase({ onError }) {
     return c;
   }, [records]);
 
-  const clearFilters = () => { setFCompany(""); setFDriver(""); setFCommander(""); setFStatus(""); };
-  const hasFilters = fCompany || fDriver || fCommander || fStatus;
+  const clearFilters = () => { setQ(""); setFCompany(""); setFDriver(""); setFCommander(""); setFStatus(""); };
+  const hasFilters = q || fCompany || fDriver || fCommander || fStatus;
 
   return (
     <div>
@@ -549,6 +562,11 @@ function ManagerDatabase({ onError }) {
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, color: MUTED, fontSize: 13, fontWeight: 600 }}>
           <Filter size={15} /> סינון
           {hasFilters && <button onClick={clearFilters} style={{ marginRight: "auto", background: "none", border: "none", color: ACCENT, cursor: "pointer", fontSize: 13, fontWeight: 600 }}>נקה</button>}
+        </div>
+        <div style={{ position: "relative", marginBottom: 8 }}>
+          <Search size={17} color={MUTED} style={{ position: "absolute", right: 11, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+          <input className="inp" style={{ paddingRight: 36 }} placeholder="חיפוש חופשי (צ' רכב, נהג, מפקד, משימה…)"
+            value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           <select className="inp" value={fCompany} onChange={(e) => setFCompany(e.target.value)}>
