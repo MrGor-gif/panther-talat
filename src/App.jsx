@@ -8,6 +8,14 @@ import crestImg from "./assets/crest.jpeg";
 
 /* ---------- domain constants ---------- */
 const COMPANIES = ["א'", "ב'", "ג'", "פלס\"ם", "מסלול"];
+const COMPANY_COLORS = {
+  "א'": "#2563EB",      // כחול
+  "ב'": "#DC2626",      // אדום
+  "ג'": "#7C3AED",      // סגול
+  "פלס\"ם": "#059669",  // ירוק
+  "מסלול": "#64748B",   // אפור ניטרלי (לא צוין צבע)
+};
+const companyColor = (c) => COMPANY_COLORS[c] || "#64748B";
 const MISSIONS = ["חפ\"ק", "כ\"כ", "מנהלתי", "דורס"];
 const FUEL_LEVELS = ["מלא", "3/4", "1/2", "1/4"];
 const COOLANT_LEVELS = ["מים מעל קו האמצע", "מים בקו האמצע", "מים מתחת לקו האמצע"];
@@ -109,6 +117,19 @@ function StatusBadge({ status }) {
     }}>
       <StatusDot status={status} size={11} />
       {s.label}
+    </span>
+  );
+}
+
+function CompanyBadge({ company }) {
+  const c = companyColor(company);
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 10px", borderRadius: 999,
+      background: c + "18", color: c, border: "1px solid " + c + "45", fontWeight: 800, fontSize: 12, whiteSpace: "nowrap",
+    }}>
+      <span style={{ width: 8, height: 8, borderRadius: "50%", background: c, flexShrink: 0 }} />
+      פלוגה {company}
     </span>
   );
 }
@@ -238,7 +259,7 @@ function ReportForm({ onSaved, onError }) {
       </Section>
 
       <Section n={2} title="פלוגה">
-        <Choice options={COMPANIES} value={f.company} onChange={(v) => set("company", v)} error={errors.company} />
+        <CompanyChoice value={f.company} onChange={(v) => set("company", v)} error={errors.company} />
       </Section>
 
       <Section n={3} title="משימה">
@@ -374,6 +395,23 @@ function Section({ n, title, hint, children }) {
       {hint && <div style={{ fontSize: 13, color: MUTED, margin: "0 32px 10px", lineHeight: 1.45 }}>{hint}</div>}
       <div style={{ margin: hint ? "0 0 0 0" : 0 }}>{children}</div>
     </section>
+  );
+}
+
+function CompanyChoice({ value, onChange, error }) {
+  return (
+    <div className={error ? "field-error" : ""} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(88px, 1fr))", gap: 8 }}>
+      {COMPANIES.map((o) => {
+        const c = companyColor(o);
+        const on = value === o;
+        return (
+          <button type="button" key={o} onClick={() => onChange(o)} className="cchip"
+            style={{ border: "1.5px solid " + (on ? c : BORDER), background: on ? c : "#fff", color: on ? "#fff" : c }}>
+            {o}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -600,9 +638,13 @@ function ManagerDatabase({ onError }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {filtered.map((r) => (
             <button key={r.id} onClick={() => setSelected(r)} className="reccard">
+              <span style={{ width: 5, alignSelf: "stretch", borderRadius: 4, background: companyColor(r.company), flexShrink: 0 }} />
               <StatusDot status={r.status} />
               <div style={{ flex: 1, textAlign: "right", minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: 15 }}>צ' {r.vehicleNumber || "—"} · פלוגה {r.company}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 2 }}>
+                  <span style={{ fontWeight: 700, fontSize: 15 }}>צ' {r.vehicleNumber || "—"}</span>
+                  <CompanyBadge company={r.company} />
+                </div>
                 <div style={{ fontSize: 13, color: MUTED, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {r.mission}{r.mission === "דורס" && r.doresNumber ? ` (${r.doresNumber})` : ""} · נהג: {r.driver} · מפקד: {r.commander}
                 </div>
@@ -649,9 +691,11 @@ function DetailModal({ record: r, onClose }) {
 
   return (
     <div className="overlay" onClick={onClose}>
-      <div className="sheet" onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-          <div style={{ fontWeight: 800, fontSize: 18 }}>צ' {r.vehicleNumber} · פלוגה {r.company}</div>
+      <div className="sheet" onClick={(e) => e.stopPropagation()} style={{ borderTop: "5px solid " + companyColor(r.company) }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8 }}>
+          <div style={{ fontWeight: 800, fontSize: 18, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            צ' {r.vehicleNumber} <CompanyBadge company={r.company} />
+          </div>
           <button onClick={onClose} className="xbtn"><X size={20} /></button>
         </div>
         <div style={{ fontSize: 13, color: MUTED, marginBottom: 12 }}>{fmtDateTime(r.createdAt)}</div>
@@ -715,6 +759,12 @@ function GlobalStyle() {
       }
       .chip:hover { border-color: ${ACCENT}; }
       .chip-on { background: ${HEADER}; color: #fff; border-color: ${HEADER}; }
+
+      .cchip {
+        padding: 11px 10px; border-radius: 10px; font-size: 15px; font-weight: 800;
+        cursor: pointer; font-family: inherit; transition: .12s;
+      }
+      .cchip:hover { filter: brightness(0.97); box-shadow: 0 0 0 3px rgba(0,0,0,.04); }
 
       .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; border-radius: 10px; }
       .seg {
