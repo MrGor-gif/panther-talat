@@ -1,0 +1,8 @@
+node_modules/
+public/
+dist/
+.wrangler/
+
+panther-accidents-source.zip
+.claude/
+package-lock.json
