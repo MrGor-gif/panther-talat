@@ -706,7 +706,9 @@ function ManagerDatabase({ isAdmin, onLogout, onError, notify }) {
   useEffect(() => {
     (async () => {
       try {
-        const res = await window.storage.getAll("talat:", true);
+        // Load the lightweight summary (no base64 images) so the list is fast.
+        // Full images are fetched per report when a card is opened / edited.
+        const res = await window.storage.getAll("talat:", true, "img");
         const list = (res?.items || [])
           .map((it) => { try { return JSON.parse(it.value); } catch (e) { return null; } })
           .filter(Boolean)
@@ -885,11 +887,27 @@ function ManagerDatabase({ isAdmin, onLogout, onError, notify }) {
 
 function DetailModal({ record: r, onClose, isAdmin, onEdit, onDelete }) {
   const { status, reasons } = computeStatus(r);
+  // The list is loaded without images (for speed) — fetch the full record now
+  // to show its photos.
+  const [full, setFull] = useState(r);
+  const [imgLoading, setImgLoading] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await window.storage.get("talat:" + r.id, true);
+        if (alive && res?.value) setFull(JSON.parse(res.value));
+      } catch (e) { /* keep summary */ }
+      finally { if (alive) setImgLoading(false); }
+    })();
+    return () => { alive = false; };
+  }, [r.id]);
+
   const images = [
-    ["שמן מנוע", r.engineOilImg],
-    ["מושבים אחוריים", r.rearSeatsImg],
-    ["רישיון רכב", r.licenseImg],
-    ["דף טל\"ת פיזי", r.talatSheetImg],
+    ["שמן מנוע", full.engineOilImg],
+    ["מושבים אחוריים", full.rearSeatsImg],
+    ["רישיון רכב", full.licenseImg],
+    ["דף טל\"ת פיזי", full.talatSheetImg],
   ].filter(([, v]) => v);
 
   const rows = [
@@ -942,7 +960,11 @@ function DetailModal({ record: r, onClose, isAdmin, onEdit, onDelete }) {
           </tbody>
         </table>
 
-        {images.length > 0 && (
+        {imgLoading ? (
+          <div style={{ marginTop: 18, display: "flex", alignItems: "center", gap: 8, color: MUTED, fontSize: 13 }}>
+            <RefreshCw size={15} className="spin" /> טוען תמונות…
+          </div>
+        ) : images.length > 0 ? (
           <div style={{ marginTop: 18 }}>
             <div style={{ fontWeight: 700, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}><Camera size={17} /> תמונות</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -954,7 +976,7 @@ function DetailModal({ record: r, onClose, isAdmin, onEdit, onDelete }) {
               ))}
             </div>
           </div>
-        )}
+        ) : null}
 
         {isAdmin && (
           <div style={{ display: "flex", gap: 8, marginTop: 22 }}>
@@ -969,11 +991,27 @@ function DetailModal({ record: r, onClose, isAdmin, onEdit, onDelete }) {
 
 /* ---------- admin edit modal (reuses the same fields) ---------- */
 function EditModal({ record, onSaved, onClose, onError }) {
-  const [f, setF] = useState(() => ({ ...emptyForm(), ...record }));
+  // The list record is a summary (no images) — load the FULL record first so
+  // editing keeps the existing photos instead of wiping them.
+  const [f, setF] = useState(null);
+  const [loadingRec, setLoadingRec] = useState(true);
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
-  const live = useMemo(() => computeStatus(f), [f]);
+  const live = useMemo(() => (f ? computeStatus(f) : { status: "green" }), [f]);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      let full = record;
+      try {
+        const res = await window.storage.get("talat:" + record.id, true);
+        if (res?.value) full = JSON.parse(res.value);
+      } catch (e) { /* fall back to summary */ }
+      if (alive) { setF({ ...emptyForm(), ...full }); setLoadingRec(false); }
+    })();
+    return () => { alive = false; };
+  }, [record.id]);
 
   async function save() {
     const e = validateTalat(f); // admin edit: required fields, but 360 not forced
@@ -987,7 +1025,7 @@ function EditModal({ record, onSaved, onClose, onError }) {
     setSaving(true);
     try {
       const { status } = computeStatus(f);
-      const updated = { ...record, ...f, status, updatedAt: new Date().toISOString() };
+      const updated = { ...f, id: record.id, createdAt: record.createdAt, status, updatedAt: new Date().toISOString() };
       await window.storage.set("talat:" + record.id, JSON.stringify(updated), true);
       onSaved(updated);
     } catch (err) {
@@ -1008,6 +1046,12 @@ function EditModal({ record, onSaved, onClose, onError }) {
         </div>
         <div style={{ fontSize: 13, color: MUTED, marginBottom: 14 }}>צ' {record.vehicleNumber} · {fmtDateTime(record.createdAt)}</div>
 
+        {loadingRec || !f ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, color: MUTED, padding: "20px 0" }}>
+            <RefreshCw size={16} className="spin" /> טוען את הדיווח…
+          </div>
+        ) : (
+        <>
         <TalatFields f={f} set={set} errors={errors} onError={onError} />
 
         <div style={{ margin: "16px 0", padding: "12px 14px", background: STATUS[live.status].bg,
@@ -1021,6 +1065,8 @@ function EditModal({ record, onSaved, onClose, onError }) {
           </button>
           <button onClick={onClose} className="actbtn actbtn-cancel">ביטול</button>
         </div>
+        </>
+        )}
       </div>
     </div>
   );
@@ -1032,6 +1078,8 @@ function GlobalStyle() {
     <style>{`
       * { box-sizing: border-box; }
       body { margin: 0; }
+      @keyframes talat-spin { to { transform: rotate(360deg); } }
+      .spin { animation: talat-spin 0.9s linear infinite; }
       .inp {
         width: 100%; padding: 11px 12px; border: 1px solid ${BORDER}; border-radius: 10px;
         font-size: 15px; font-family: inherit; background: #fff; color: ${TEXT}; outline: none;

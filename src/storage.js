@@ -48,8 +48,9 @@ async function apiList(prefix) {
   if (!res.ok) throw new Error("storage LIST failed");
   return res.json();
 }
-async function apiGetAll(prefix) {
-  const res = await fetch(`/api/storage-getall?prefix=${encodeURIComponent(prefix || "")}`);
+async function apiGetAll(prefix, strip) {
+  const url = `/api/storage-getall?prefix=${encodeURIComponent(prefix || "")}${strip ? `&strip=${encodeURIComponent(strip)}` : ""}`;
+  const res = await fetch(url);
   if (!res.ok) throw new Error("storage GETALL failed");
   return res.json();
 }
@@ -114,7 +115,7 @@ const storage = {
       return { keys: [], prefix, shared: true };
     }
   },
-  async getAll(prefix = "", shared = false) {
+  async getAll(prefix = "", shared = false, strip = null) {
     if (!shared) {
       const all = localReadAll();
       const items = Object.keys(all)
@@ -123,7 +124,7 @@ const storage = {
       return { items, prefix, shared: false };
     }
     try {
-      return await apiGetAll(prefix);
+      return await apiGetAll(prefix, strip);
     } catch (e) {
       const all = localReadAll();
       const items = Object.keys(all)

@@ -48,15 +48,29 @@ export default {
     }
 
     // Fetch every value under a prefix in one request (used to load every
-    // report, each stored under its own key).
+    // report, each stored under its own key). Values are fetched in PARALLEL
+    // (not sequentially) for speed. Pass `strip=img` to drop the heavy base64
+    // image fields — the manager list only needs the summary, so this keeps the
+    // response small and fast; full images are fetched per report on demand.
     if (url.pathname === "/api/storage-getall" && request.method === "GET") {
       const prefix = url.searchParams.get("prefix") || "";
+      const strip = url.searchParams.get("strip");
       const list = await env.TALAT_KV.list({ prefix });
+      const names = list.keys.map((k) => k.name).filter((n) => !n.startsWith("__"));
+      const values = await Promise.all(names.map((n) => env.TALAT_KV.get(n)));
+      const IMG_FIELDS = ["engineOilImg", "rearSeatsImg", "licenseImg", "talatSheetImg"];
       const items = [];
-      for (const k of list.keys) {
-        if (k.name.startsWith("__")) continue;
-        const value = await env.TALAT_KV.get(k.name);
-        if (value !== null) items.push({ key: k.name, value });
+      for (let i = 0; i < names.length; i++) {
+        let value = values[i];
+        if (value === null) continue;
+        if (strip === "img") {
+          try {
+            const obj = JSON.parse(value);
+            for (const f of IMG_FIELDS) delete obj[f];
+            value = JSON.stringify(obj);
+          } catch (e) { /* leave value as-is if it isn't JSON */ }
+        }
+        items.push({ key: names[i], value });
       }
       return json({ items, prefix, shared: true });
     }
