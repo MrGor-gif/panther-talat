@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import "./storage.js";
+import { queueReport, sendReportToServer, syncPending, countPending } from "./offline.js";
 import {
   Truck, ClipboardCheck, Camera, X, Check, AlertTriangle, ShieldCheck,
   Lock, LogIn, LogOut, Filter, ChevronLeft, Image as ImageIcon, Trash2, ListChecks, Search, CheckCircle2, Video,
-  ShieldAlert, Pencil, Save,
+  ShieldAlert, Pencil, Save, WifiOff, CloudUpload, RefreshCw,
 } from "lucide-react";
 import crestImg from "./assets/crest-panther.png";
 
@@ -148,19 +149,60 @@ const emptyForm = () => ({
 export default function App() {
   const [view, setView] = useState("form"); // form | manager
   const [toast, setToast] = useState(null);
+  const [pendingCount, setPendingCount] = useState(0);
 
-  const showToast = (msg, kind = "ok") => {
+  const showToast = (msg, kind = "ok", ms = 3800) => {
     setToast({ msg, kind });
-    setTimeout(() => setToast(null), 3500);
+    setTimeout(() => setToast(null), ms);
   };
+
+  async function refreshPending() {
+    try { setPendingCount(await countPending()); } catch (e) {}
+  }
+
+  async function doSync(announce) {
+    let n = 0;
+    try { n = await syncPending(); } catch (e) {}
+    await refreshPending();
+    if (n > 0 && announce) {
+      showToast(`${n} ${n === 1 ? "דיווח סונכרן" : "דיווחים סונכרנו"} מהמכשיר לשרת ✓`);
+    }
+    return n;
+  }
+
+  useEffect(() => {
+    refreshPending();
+    doSync(true); // flush anything left from a previous offline session
+    const onOnline = () => doSync(true);
+    window.addEventListener("online", onOnline);
+    // safety-net retry while offline items may be waiting
+    const iv = setInterval(() => { if (navigator.onLine) doSync(true); }, 30000);
+    return () => { window.removeEventListener("online", onOnline); clearInterval(iv); };
+  }, []);
 
   return (
     <div style={{ minHeight: "100vh", background: PAGE, color: TEXT, fontFamily: "system-ui, 'Segoe UI', Arial, sans-serif" }}>
       <GlobalStyle />
       <Header view={view} setView={setView} />
+      {pendingCount > 0 && (
+        <div style={{ background: "#FCF3D9", borderBottom: "1px solid #E0A32E55", color: "#8A5A00" }}>
+          <div style={{ maxWidth: 720, margin: "0 auto", padding: "9px 14px", display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, fontWeight: 700 }}>
+            <WifiOff size={16} />
+            {pendingCount === 1 ? "דיווח אחד ממתין" : `${pendingCount} דיווחים ממתינים`} לשליחה — יסונכרנו אוטומטית כשתחזור הקליטה
+            <button onClick={() => doSync(true)} title="נסה לסנכרן עכשיו"
+              style={{ marginRight: "auto", background: "none", border: "none", color: "#8A5A00", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, fontWeight: 700, fontSize: 13 }}>
+              <RefreshCw size={14} /> סנכרן
+            </button>
+          </div>
+        </div>
+      )}
       <main style={{ maxWidth: 720, margin: "0 auto", padding: "16px 14px 60px" }}>
         {view === "form" ? (
-          <ReportForm onSaved={() => showToast("הטל\"ת נשלח ונשמר בהצלחה ✓")} onError={(m) => showToast(m, "err")} />
+          <ReportForm
+            onSaved={() => { showToast("הטל\"ת נשלח ונשמר בהצלחה ✓"); refreshPending(); }}
+            onOfflineSaved={() => { showToast("הטופס נשמר במכשיר וישלח אוטומטית כשתחזור הקליטה", "offline", 5500); refreshPending(); }}
+            onError={(m) => showToast(m, "err")}
+          />
         ) : (
           <ManagerPage onError={(m) => showToast(m, "err")} notify={(m) => showToast(m)} />
         )}
@@ -169,8 +211,8 @@ export default function App() {
         </footer>
       </main>
       {toast && (
-        <div className={"toast " + (toast.kind === "err" ? "toast-err" : "toast-ok")}>
-          {toast.kind === "err" ? <AlertTriangle size={18} /> : <Check size={18} />}
+        <div className={"toast " + (toast.kind === "err" ? "toast-err" : toast.kind === "offline" ? "toast-offline" : "toast-ok")}>
+          {toast.kind === "err" ? <AlertTriangle size={18} /> : toast.kind === "offline" ? <WifiOff size={18} /> : <Check size={18} />}
           <span>{toast.msg}</span>
         </div>
       )}
@@ -352,7 +394,7 @@ function TalatFields({ f, set, errors, onError }) {
 
 /* =================================================================== */
 /* ------------------------- REPORT FORM ----------------------------- */
-function ReportForm({ onSaved, onError }) {
+function ReportForm({ onSaved, onOfflineSaved, onError }) {
   const [f, setF] = useState(emptyForm());
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
@@ -379,22 +421,32 @@ function ReportForm({ onSaved, onError }) {
       return;
     }
     setSubmitting(true);
+    const { status } = computeStatus(f);
+    const record = { id: uid(), createdAt: new Date().toISOString(), status, ...f };
     try {
-      const { status } = computeStatus(f);
-      const record = { id: uid(), createdAt: new Date().toISOString(), status, ...f };
-      await window.storage.set("talat:" + record.id, JSON.stringify(record), true);
+      // 1) try to send straight to the server (throws if offline/unreachable)
+      await sendReportToServer(record);
       setErrors({});
-      setConfirmed(record);
+      setConfirmed({ record, pending: false });
       window.scrollTo({ top: 0, behavior: "smooth" });
       onSaved();
     } catch (e) {
-      onError("שמירה נכשלה — בדוק חיבור אינטרנט ונסה שוב");
+      // 2) offline / server unreachable → save on the device, sync later
+      try {
+        await queueReport(record);
+        setErrors({});
+        setConfirmed({ record, pending: true });
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        onOfflineSaved && onOfflineSaved();
+      } catch (dbErr) {
+        onError("שמירה נכשלה — נסה שוב");
+      }
     } finally {
       setSubmitting(false);
     }
   }
 
-  if (confirmed) return <ConfirmationScreen record={confirmed} onNew={() => { setConfirmed(null); setF(emptyForm()); }} />;
+  if (confirmed) return <ConfirmationScreen record={confirmed.record} pending={confirmed.pending} onNew={() => { setConfirmed(null); setF(emptyForm()); }} />;
 
   return (
     <div>
@@ -434,9 +486,9 @@ function IntroCard() {
 }
 
 /* ---------- confirmation screen (screenshot as proof) ---------- */
-function ConfirmationScreen({ record: r, onNew }) {
-  const st = STATUS[r.status];
+function ConfirmationScreen({ record: r, pending, onNew }) {
   const code = ("TLT-" + r.id).toUpperCase();
+  const bannerColor = pending ? "#B7791F" : STATUS.green.color;
   const rows = [
     ["מספר צ' רכב", r.vehicleNumber],
     ["משימה", r.mission + (r.mission === "דורס" && r.doresNumber ? ` — דורס ${r.doresNumber}` : "")],
@@ -447,12 +499,14 @@ function ConfirmationScreen({ record: r, onNew }) {
   return (
     <div>
       <div style={{ background: SURFACE, border: "1px solid " + BORDER, borderRadius: 18, overflow: "hidden", boxShadow: "0 6px 20px rgba(0,0,0,.08)" }}>
-        <div style={{ background: STATUS.green.color, color: "#fff", padding: "28px 20px 24px", textAlign: "center" }}>
+        <div style={{ background: bannerColor, color: "#fff", padding: "28px 20px 24px", textAlign: "center" }}>
           <div style={{ width: 72, height: 72, borderRadius: "50%", background: "rgba(255,255,255,.18)", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: 12 }}>
-            <CheckCircle2 size={46} strokeWidth={2.4} />
+            {pending ? <WifiOff size={44} strokeWidth={2.2} /> : <CheckCircle2 size={46} strokeWidth={2.4} />}
           </div>
-          <div style={{ fontSize: 22, fontWeight: 800 }}>הטל"ת בוצע ונשלח בהצלחה</div>
-          <div style={{ fontSize: 14, opacity: 0.92, marginTop: 4 }}>הדיווח נשמר במאגר הפלוגתי</div>
+          <div style={{ fontSize: 22, fontWeight: 800 }}>{pending ? "הטל\"ת נשמר במכשיר" : "הטל\"ת בוצע ונשלח בהצלחה"}</div>
+          <div style={{ fontSize: 14, opacity: 0.92, marginTop: 4 }}>
+            {pending ? "אין כרגע קליטה — הדיווח יישלח אוטומטית כשהקליטה תחזור" : "הדיווח נשמר במאגר הפלוגתי"}
+          </div>
         </div>
 
         <div style={{ padding: "18px 18px 22px" }}>
@@ -1081,6 +1135,7 @@ function GlobalStyle() {
       }
       .toast-ok { background: #2E7D32; }
       .toast-err { background: #C4463A; }
+      .toast-offline { background: #B7791F; }
     `}</style>
   );
 }
