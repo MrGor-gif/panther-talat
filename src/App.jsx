@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import "./storage.js";
 import {
   Truck, ClipboardCheck, Camera, X, Check, AlertTriangle, ShieldCheck,
-  Lock, LogIn, Filter, ChevronLeft, Image as ImageIcon, Trash2, ListChecks, Search,
+  Lock, LogIn, Filter, ChevronLeft, Image as ImageIcon, Trash2, ListChecks, Search, CheckCircle2, Video,
 } from "lucide-react";
 import crestImg from "./assets/crest.jpeg";
 
@@ -205,6 +205,7 @@ function ReportForm({ onSaved, onError }) {
   const [f, setF] = useState(emptyForm());
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
+  const [confirmed, setConfirmed] = useState(null);
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
 
   const live = useMemo(() => computeStatus(f), [f]);
@@ -222,13 +223,19 @@ function ReportForm({ onSaved, onError }) {
     };
     for (const k in req) if (!String(f[k] || "").trim()) e[k] = true;
     if (f.mission === "דורס" && !f.doresNumber.trim()) e.doresNumber = true;
+    // חובה: לא ניתן לשלוח טל"ת ללא אישור שליחת סרטון 360°
+    if (f.photo360 !== "מאשר") e.photo360 = true;
     setErrors(e);
-    return Object.keys(e).length === 0;
+    return e;
   }
 
   async function submit() {
-    if (!validate()) {
-      onError("יש למלא את כל שדות החובה המסומנים באדום");
+    const e = validate();
+    if (Object.keys(e).length) {
+      const only360 = e.photo360 && f.photo360 === "לא מאשר";
+      onError(only360
+        ? 'לא ניתן לשלוח טל"ת ללא שליחת סרטון 360°'
+        : "יש למלא את כל שדות החובה המסומנים באדום");
       const first = document.querySelector(".field-error");
       if (first) first.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
@@ -238,8 +245,8 @@ function ReportForm({ onSaved, onError }) {
       const { status } = computeStatus(f);
       const record = { id: uid(), createdAt: new Date().toISOString(), status, ...f };
       await window.storage.set("talat:" + record.id, JSON.stringify(record), true);
-      setF(emptyForm());
       setErrors({});
+      setConfirmed(record);
       window.scrollTo({ top: 0, behavior: "smooth" });
       onSaved();
     } catch (e) {
@@ -248,6 +255,8 @@ function ReportForm({ onSaved, onError }) {
       setSubmitting(false);
     }
   }
+
+  if (confirmed) return <ConfirmationScreen record={confirmed} onNew={() => { setConfirmed(null); setF(emptyForm()); }} />;
 
   return (
     <div>
@@ -339,7 +348,7 @@ function ReportForm({ onSaved, onError }) {
       </Section>
 
       <Section n={17} title="אישור צילום 360°"
-        hint="אשר/י שצילמת את הרכב 360° (פנים וחוץ) ושלחת סרטון לקבוצת הטל&quot;ת הפלוגתית">
+        hint="אשר/י שצילמת את הרכב 360° (פנים וחוץ) ושלחת סרטון לקבוצת הטל&quot;ת הפלוגתית · חובה — לא ניתן לשלוח טל&quot;ת ללא אישור סרטון 360°">
         <div className={"row2 " + (errors.photo360 ? "field-error" : "")}>
           <button type="button" className={"seg " + (f.photo360 === "מאשר" ? "seg-green" : "")}
             onClick={() => set("photo360", "מאשר")}><Check size={16} /> מאשר</button>
@@ -380,6 +389,68 @@ function IntroCard() {
       <div style={{ fontSize: 14, color: MUTED, lineHeight: 1.5 }}>
         מלא/י את בדיקת הרכב לפני נסיעה. שדות חובה מסומנים. בסיום — לחצ/י על <b>שליחת טל"ת</b>. הדיווח יישמר במאגר המרכזי ויקבל חיווי תקינות אוטומטי.
       </div>
+    </div>
+  );
+}
+
+/* ---------- confirmation screen (screenshot as proof) ---------- */
+function ConfirmationScreen({ record: r, onNew }) {
+  const st = STATUS[r.status];
+  const code = ("TLT-" + r.id).toUpperCase();
+  const rows = [
+    ["מספר צ' רכב", r.vehicleNumber],
+    ["משימה", r.mission + (r.mission === "דורס" && r.doresNumber ? ` — דורס ${r.doresNumber}` : "")],
+    ["שם נהג", r.driver],
+    ["מפקד נסיעה", r.commander],
+    ["תאריך ושעה", fmtDateTime(r.createdAt)],
+  ];
+  return (
+    <div>
+      <div style={{ background: SURFACE, border: "1px solid " + BORDER, borderRadius: 18, overflow: "hidden", boxShadow: "0 6px 20px rgba(0,0,0,.08)" }}>
+        <div style={{ background: STATUS.green.color, color: "#fff", padding: "28px 20px 24px", textAlign: "center" }}>
+          <div style={{ width: 72, height: 72, borderRadius: "50%", background: "rgba(255,255,255,.18)", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: 12 }}>
+            <CheckCircle2 size={46} strokeWidth={2.4} />
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 800 }}>הטל"ת בוצע ונשלח בהצלחה</div>
+          <div style={{ fontSize: 14, opacity: 0.92, marginTop: 4 }}>הדיווח נשמר במאגר הפלוגתי</div>
+        </div>
+
+        <div style={{ padding: "18px 18px 22px" }}>
+          <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginBottom: 16 }}>
+            <CompanyBadge company={r.company} />
+            <StatusBadge status={r.status} />
+          </div>
+
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+            <tbody>
+              {rows.map(([k, v]) => (
+                <tr key={k} style={{ borderBottom: "1px solid " + BORDER }}>
+                  <td style={{ padding: "10px 4px", color: MUTED, whiteSpace: "nowrap", width: "42%" }}>{k}</td>
+                  <td style={{ padding: "10px 4px", fontWeight: 700 }}>{v || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, padding: "11px 14px", background: STATUS.green.bg, border: "1px solid " + STATUS.green.color + "40", borderRadius: 10, color: STATUS.green.color, fontWeight: 700, fontSize: 14 }}>
+            <Video size={18} /> סרטון 360° נשלח לקבוצת הטל"ת הפלוגתית
+            <CheckCircle2 size={18} style={{ marginRight: "auto" }} />
+          </div>
+
+          <div style={{ textAlign: "center", marginTop: 16 }}>
+            <div style={{ fontSize: 12, color: MUTED }}>מספר אישור</div>
+            <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: 1, direction: "ltr" }}>{code}</div>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, marginTop: 16, padding: "10px 12px", background: "#FFF8E6", border: "1px dashed " + ACCENT, borderRadius: 10, color: "#8A5A00", fontSize: 13, fontWeight: 600 }}>
+            <Camera size={16} /> צלמ/י מסך של מסך זה ושמור/י כאישור ביצוע הטל"ת
+          </div>
+        </div>
+      </div>
+
+      <button className="submit" style={{ marginTop: 16, background: HEADER, color: "#fff", boxShadow: "none" }} onClick={onNew}>
+        <ClipboardCheck size={20} /> מילוי טל"ת חדש
+      </button>
     </div>
   );
 }
