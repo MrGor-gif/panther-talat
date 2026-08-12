@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import "./storage.js";
 import {
   Truck, ClipboardCheck, Camera, X, Check, AlertTriangle, ShieldCheck,
-  Lock, LogIn, Filter, ChevronLeft, Image as ImageIcon, Trash2, ListChecks, Search, CheckCircle2, Video,
+  Lock, LogIn, LogOut, Filter, ChevronLeft, Image as ImageIcon, Trash2, ListChecks, Search, CheckCircle2, Video,
+  ShieldAlert, Pencil, Save,
 } from "lucide-react";
 import crestImg from "./assets/crest.jpeg";
 
@@ -22,7 +23,8 @@ const COOLANT_LEVELS = ["מים מעל קו האמצע", "מים בקו האמצ
 const TOOLS = ["מטף", "ג'ק", "ידית הפעלה", "מפתח גלגלים", "אפוד זוהר", "משולש אזהרה"];
 const TRUNK_LOCK = ["קיים", "לא קיים", "לא רלוונטי"];
 
-const MANAGER_PASSWORD = "talat49";
+const MANAGER_PASSWORD = "talat49"; // צפייה בלבד
+const ADMIN_PASSWORD = "manig49";   // מנהל — עריכה ומחיקה
 
 /* ---------- palette ---------- */
 const ACCENT = "#E0A32E";
@@ -160,7 +162,7 @@ export default function App() {
         {view === "form" ? (
           <ReportForm onSaved={() => showToast("הטל\"ת נשלח ונשמר בהצלחה ✓")} onError={(m) => showToast(m, "err")} />
         ) : (
-          <ManagerPage onError={(m) => showToast(m, "err")} />
+          <ManagerPage onError={(m) => showToast(m, "err")} notify={(m) => showToast(m)} />
         )}
         <footer style={{ textAlign: "center", color: MUTED, fontSize: 12, marginTop: 28, paddingTop: 16, borderTop: "1px solid " + BORDER }}>
           אתר זה נבנה ע"י גיא גורליק
@@ -199,69 +201,23 @@ function Header({ view, setView }) {
   );
 }
 
-/* =================================================================== */
-/* ------------------------- REPORT FORM ----------------------------- */
-function ReportForm({ onSaved, onError }) {
-  const [f, setF] = useState(emptyForm());
-  const [submitting, setSubmitting] = useState(false);
-  const [errors, setErrors] = useState({});
-  const [confirmed, setConfirmed] = useState(null);
-  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+/* shared required-field validation (used by create + admin edit) */
+function validateTalat(f, { require360 = false } = {}) {
+  const e = {};
+  const req = ["vehicleNumber", "company", "mission", "driver", "commander", "fuel",
+    "coolant", "sprayers", "tirePressure", "lights", "trunkLock", "photo360"];
+  for (const k of req) if (!String(f[k] || "").trim()) e[k] = true;
+  if (f.mission === "דורס" && !String(f.doresNumber || "").trim()) e.doresNumber = true;
+  if (require360 && f.photo360 !== "מאשר") e.photo360 = true;
+  return e;
+}
 
-  const live = useMemo(() => computeStatus(f), [f]);
-
+/* the 18 טל"ת fields, shared between the create form and the admin edit modal */
+function TalatFields({ f, set, errors, onError }) {
   const toggleTool = (t) =>
-    setF((p) => ({ ...p, tools: p.tools.includes(t) ? p.tools.filter((x) => x !== t) : [...p.tools, t] }));
-
-  function validate() {
-    const e = {};
-    const req = {
-      vehicleNumber: "מספר צ' רכב", company: "פלוגה", mission: "משימה",
-      driver: "שם נהג", commander: "שם מפקד נסיעה", fuel: "מפלס דלק",
-      coolant: "מפלס מי קירור", sprayers: "מתיזים", tirePressure: "לחץ אוויר",
-      lights: "תאורה", trunkLock: "מנעול תא מטען", photo360: "אישור צילום 360",
-    };
-    for (const k in req) if (!String(f[k] || "").trim()) e[k] = true;
-    if (f.mission === "דורס" && !f.doresNumber.trim()) e.doresNumber = true;
-    // חובה: לא ניתן לשלוח טל"ת ללא אישור שליחת סרטון 360°
-    if (f.photo360 !== "מאשר") e.photo360 = true;
-    setErrors(e);
-    return e;
-  }
-
-  async function submit() {
-    const e = validate();
-    if (Object.keys(e).length) {
-      const only360 = e.photo360 && f.photo360 === "לא מאשר";
-      onError(only360
-        ? 'לא ניתן לשלוח טל"ת ללא שליחת סרטון 360°'
-        : "יש למלא את כל שדות החובה המסומנים באדום");
-      const first = document.querySelector(".field-error");
-      if (first) first.scrollIntoView({ behavior: "smooth", block: "center" });
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const { status } = computeStatus(f);
-      const record = { id: uid(), createdAt: new Date().toISOString(), status, ...f };
-      await window.storage.set("talat:" + record.id, JSON.stringify(record), true);
-      setErrors({});
-      setConfirmed(record);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      onSaved();
-    } catch (e) {
-      onError("שמירה נכשלה — בדוק חיבור אינטרנט ונסה שוב");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  if (confirmed) return <ConfirmationScreen record={confirmed} onNew={() => { setConfirmed(null); setF(emptyForm()); }} />;
-
+    set("tools", f.tools.includes(t) ? f.tools.filter((x) => x !== t) : [...f.tools, t]);
   return (
-    <div>
-      <IntroCard />
-
+    <>
       <Section n={1} title="מספר צ' רכב">
         <input className={"inp " + (errors.vehicleNumber ? "field-error" : "")} inputMode="numeric"
           placeholder="לדוגמה: 812345" value={f.vehicleNumber} onChange={(e) => set("vehicleNumber", e.target.value)} />
@@ -361,6 +317,61 @@ function ReportForm({ onSaved, onError }) {
         <textarea className="inp" rows={3} placeholder="פירוט תקלות נוספות…" value={f.additionalFaults}
           onChange={(e) => set("additionalFaults", e.target.value)} />
       </Section>
+    </>
+  );
+}
+
+/* =================================================================== */
+/* ------------------------- REPORT FORM ----------------------------- */
+function ReportForm({ onSaved, onError }) {
+  const [f, setF] = useState(emptyForm());
+  const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [confirmed, setConfirmed] = useState(null);
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+
+  const live = useMemo(() => computeStatus(f), [f]);
+
+  function validate() {
+    const e = validateTalat(f, { require360: true });
+    setErrors(e);
+    return e;
+  }
+
+  async function submit() {
+    const e = validate();
+    if (Object.keys(e).length) {
+      const only360 = e.photo360 && f.photo360 === "לא מאשר";
+      onError(only360
+        ? 'לא ניתן לשלוח טל"ת ללא שליחת סרטון 360°'
+        : "יש למלא את כל שדות החובה המסומנים באדום");
+      const first = document.querySelector(".field-error");
+      if (first) first.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const { status } = computeStatus(f);
+      const record = { id: uid(), createdAt: new Date().toISOString(), status, ...f };
+      await window.storage.set("talat:" + record.id, JSON.stringify(record), true);
+      setErrors({});
+      setConfirmed(record);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      onSaved();
+    } catch (e) {
+      onError("שמירה נכשלה — בדוק חיבור אינטרנט ונסה שוב");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (confirmed) return <ConfirmationScreen record={confirmed} onNew={() => { setConfirmed(null); setF(emptyForm()); }} />;
+
+  return (
+    <div>
+      <IntroCard />
+
+      <TalatFields f={f} set={set} errors={errors} onError={onError} />
 
       {/* live status preview */}
       <div style={{ margin: "18px 0", padding: "14px 16px", background: STATUS[live.status].bg,
@@ -555,22 +566,31 @@ function ImageField({ value, onChange, onError }) {
 
 /* =================================================================== */
 /* ------------------------- MANAGER PAGE ---------------------------- */
-function ManagerPage({ onError }) {
-  const [authed, setAuthed] = useState(() => sessionStorage.getItem("talat-mgr") === "1");
+function ManagerPage({ onError, notify }) {
+  const [role, setRole] = useState(() => sessionStorage.getItem("talat-role"));
   const [pw, setPw] = useState("");
   const [pwErr, setPwErr] = useState(false);
 
   function login(e) {
     e && e.preventDefault();
-    if (pw === MANAGER_PASSWORD) {
-      sessionStorage.setItem("talat-mgr", "1");
-      setAuthed(true);
+    let r = null;
+    if (pw === ADMIN_PASSWORD) r = "admin";
+    else if (pw === MANAGER_PASSWORD) r = "viewer";
+    if (r) {
+      sessionStorage.setItem("talat-role", r);
+      setRole(r);
     } else {
       setPwErr(true);
     }
   }
 
-  if (!authed) {
+  function logout() {
+    sessionStorage.removeItem("talat-role");
+    setRole(null);
+    setPw("");
+  }
+
+  if (!role) {
     return (
       <form onSubmit={login} style={{ maxWidth: 360, margin: "40px auto 0", background: SURFACE, border: "1px solid " + BORDER, borderRadius: 16, padding: 24, textAlign: "center" }}>
         <div style={{ background: HEADER, color: "#fff", width: 56, height: 56, borderRadius: 14, display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: 12 }}>
@@ -586,13 +606,14 @@ function ManagerPage({ onError }) {
     );
   }
 
-  return <ManagerDatabase onError={onError} />;
+  return <ManagerDatabase isAdmin={role === "admin"} onLogout={logout} onError={onError} notify={notify} />;
 }
 
-function ManagerDatabase({ onError }) {
+function ManagerDatabase({ isAdmin, onLogout, onError, notify }) {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
+  const [editing, setEditing] = useState(null);
   const [q, setQ] = useState("");
   const [fCompany, setFCompany] = useState("");
   const [fDriver, setFDriver] = useState("");
@@ -644,12 +665,43 @@ function ManagerDatabase({ onError }) {
   const clearFilters = () => { setQ(""); setFCompany(""); setFDriver(""); setFCommander(""); setFStatus(""); };
   const hasFilters = q || fCompany || fDriver || fCommander || fStatus;
 
+  async function handleDelete(rec) {
+    if (!window.confirm(`למחוק לצמיתות את דיווח הטל"ת של צ' ${rec.vehicleNumber}?\nלא ניתן לשחזר פעולה זו.`)) return;
+    try {
+      await window.storage.delete("talat:" + rec.id, true);
+      setRecords((rs) => rs.filter((r) => r.id !== rec.id));
+      setSelected(null);
+      notify && notify("הדיווח נמחק");
+    } catch (e) {
+      onError && onError("מחיקה נכשלה — בדוק חיבור ונסה שוב");
+    }
+  }
+
+  function handleEditSaved(updated) {
+    setRecords((rs) => rs.map((r) => (r.id === updated.id ? updated : r))
+      .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")));
+    setEditing(null);
+    setSelected(null);
+    notify && notify("הדיווח עודכן ונשמר");
+  }
+
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "2px 0 14px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "2px 0 14px", flexWrap: "wrap" }}>
         <ListChecks size={22} color={ACCENT} />
         <h2 style={{ margin: 0, fontSize: 20 }}>מאגר דיווחי טל"ת</h2>
         <span style={{ color: MUTED, fontSize: 14 }}>({records.length})</span>
+        {isAdmin && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 10px", borderRadius: 999,
+            background: ACCENT + "22", color: "#8A5A00", border: "1px solid " + ACCENT + "66", fontWeight: 800, fontSize: 12 }}>
+            <ShieldAlert size={13} /> מצב מנהל · עריכה ומחיקה
+          </span>
+        )}
+        {onLogout && (
+          <button onClick={onLogout} style={{ marginRight: "auto", background: "none", border: "none", color: MUTED, cursor: "pointer", fontSize: 13, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <LogOut size={14} /> יציאה
+          </button>
+        )}
       </div>
 
       {/* status summary */}
@@ -727,12 +779,28 @@ function ManagerDatabase({ onError }) {
         </div>
       )}
 
-      {selected && <DetailModal record={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <DetailModal
+          record={selected}
+          isAdmin={isAdmin}
+          onEdit={() => { setEditing(selected); setSelected(null); }}
+          onDelete={() => handleDelete(selected)}
+          onClose={() => setSelected(null)}
+        />
+      )}
+      {editing && (
+        <EditModal
+          record={editing}
+          onSaved={handleEditSaved}
+          onClose={() => setEditing(null)}
+          onError={onError}
+        />
+      )}
     </div>
   );
 }
 
-function DetailModal({ record: r, onClose }) {
+function DetailModal({ record: r, onClose, isAdmin, onEdit, onDelete }) {
   const { status, reasons } = computeStatus(r);
   const images = [
     ["שמן מנוע", r.engineOilImg],
@@ -804,6 +872,72 @@ function DetailModal({ record: r, onClose }) {
             </div>
           </div>
         )}
+
+        {isAdmin && (
+          <div style={{ display: "flex", gap: 8, marginTop: 22 }}>
+            <button onClick={onEdit} className="actbtn actbtn-edit"><Pencil size={17} /> עריכה</button>
+            <button onClick={onDelete} className="actbtn actbtn-del"><Trash2 size={17} /> מחיקה</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- admin edit modal (reuses the same fields) ---------- */
+function EditModal({ record, onSaved, onClose, onError }) {
+  const [f, setF] = useState(() => ({ ...emptyForm(), ...record }));
+  const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
+  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const live = useMemo(() => computeStatus(f), [f]);
+
+  async function save() {
+    const e = validateTalat(f); // admin edit: required fields, but 360 not forced
+    setErrors(e);
+    if (Object.keys(e).length) {
+      onError && onError("יש למלא את כל שדות החובה המסומנים באדום");
+      const first = document.querySelector(".field-error");
+      if (first) first.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    setSaving(true);
+    try {
+      const { status } = computeStatus(f);
+      const updated = { ...record, ...f, status, updatedAt: new Date().toISOString() };
+      await window.storage.set("talat:" + record.id, JSON.stringify(updated), true);
+      onSaved(updated);
+    } catch (err) {
+      onError && onError("שמירה נכשלה — בדוק חיבור ונסה שוב");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()} style={{ borderTop: "5px solid " + ACCENT }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 4 }}>
+          <div style={{ fontWeight: 800, fontSize: 18, display: "flex", alignItems: "center", gap: 8 }}>
+            <Pencil size={18} /> עריכת דיווח
+          </div>
+          <button onClick={onClose} className="xbtn"><X size={20} /></button>
+        </div>
+        <div style={{ fontSize: 13, color: MUTED, marginBottom: 14 }}>צ' {record.vehicleNumber} · {fmtDateTime(record.createdAt)}</div>
+
+        <TalatFields f={f} set={set} errors={errors} onError={onError} />
+
+        <div style={{ margin: "16px 0", padding: "12px 14px", background: STATUS[live.status].bg,
+          borderRadius: 12, border: "1px solid " + STATUS[live.status].color + "33", display: "flex", alignItems: "center", gap: 10, fontWeight: 800, color: STATUS[live.status].color }}>
+          <StatusDot status={live.status} /> חיווי לאחר עדכון: {STATUS[live.status].label}
+        </div>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={save} disabled={saving} className="actbtn actbtn-save">
+            <Save size={18} /> {saving ? "שומר…" : "שמירת שינויים"}
+          </button>
+          <button onClick={onClose} className="actbtn actbtn-cancel">ביטול</button>
+        </div>
       </div>
     </div>
   );
@@ -898,6 +1032,17 @@ function GlobalStyle() {
         .sheet { border-radius: 18px; }
       }
       .xbtn { background: #fff; border: 1px solid ${BORDER}; border-radius: 9px; padding: 6px; cursor: pointer; color: ${TEXT}; display: flex; }
+
+      .actbtn {
+        flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+        padding: 13px; border-radius: 11px; font-size: 15px; font-weight: 700; cursor: pointer;
+        font-family: inherit; border: 1px solid ${BORDER}; background: #fff; color: ${TEXT};
+      }
+      .actbtn:disabled { opacity: .7; cursor: default; }
+      .actbtn-edit { background: ${HEADER}; color: #fff; border-color: ${HEADER}; }
+      .actbtn-del { background: ${STATUS.red.bg}; color: ${STATUS.red.color}; border-color: ${STATUS.red.color}; }
+      .actbtn-save { background: ${STATUS.green.color}; color: #fff; border-color: ${STATUS.green.color}; }
+      .actbtn-cancel { flex: 0 0 auto; padding-left: 22px; padding-right: 22px; }
 
       .toast {
         position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100;

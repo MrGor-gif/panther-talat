@@ -91,7 +91,17 @@ const storage = {
       localWriteAll(all);
       return { key, deleted: existed, shared: false };
     }
-    return await apiDelete(key);
+    try {
+      return await apiDelete(key);
+    } catch (e) {
+      // API unreachable (e.g. local dev without the worker) — fall back to
+      // localStorage so the app still behaves consistently offline.
+      const all = localReadAll();
+      const existed = key in all;
+      delete all[key];
+      localWriteAll(all);
+      return { key, deleted: existed, shared: false };
+    }
   },
   async list(prefix = "", shared = false) {
     if (!shared) {
