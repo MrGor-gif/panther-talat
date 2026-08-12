@@ -180,10 +180,39 @@ export default function App() {
 
 /* ---------- header ---------- */
 function Header({ view, setView }) {
+  const crestRef = useRef(null);
+  const clicksRef = useRef(0);
+  const timerRef = useRef(null);
+
+  function handleCrestClick() {
+    // אנימציה קטנה בכל לחיצה
+    if (crestRef.current && crestRef.current.animate) {
+      crestRef.current.animate(
+        [
+          { transform: "scale(1) rotate(0deg)" },
+          { transform: "scale(1.3) rotate(-14deg)" },
+          { transform: "scale(1) rotate(0deg)" },
+        ],
+        { duration: 320, easing: "ease-out" }
+      );
+    }
+    clicksRef.current += 1;
+    clearTimeout(timerRef.current);
+    if (clicksRef.current >= 5) {
+      // easter egg: פתיחת משחק הנחש בכרטיסייה חדשה
+      clicksRef.current = 0;
+      window.open("https://guyprojact.guygula-gula.workers.dev/snake/", "_blank", "noopener");
+    } else {
+      // איפוס הרצף אם עוצרים
+      timerRef.current = setTimeout(() => { clicksRef.current = 0; }, 1500);
+    }
+  }
+
   return (
     <header style={{ background: HEADER, color: "#fff", borderBottom: "3px solid " + ACCENT }}>
       <div style={{ maxWidth: 720, margin: "0 auto", padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}>
-        <img src={crestImg} alt="סמל" style={{ height: 46, width: 46, objectFit: "contain", borderRadius: 8 }} />
+        <img ref={crestRef} onClick={handleCrestClick} src={crestImg} alt="סמל"
+          style={{ height: 46, width: 46, objectFit: "contain", borderRadius: 8, cursor: "pointer", userSelect: "none" }} draggable={false} />
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 800, fontSize: 18, lineHeight: 1.15 }}>טל"ת — בדיקת רכב לפני נסיעה</div>
           <div style={{ fontSize: 12, color: "#B9BDC7" }}>הפרויקטים של Mr.Gor</div>
