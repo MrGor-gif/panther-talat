@@ -5,7 +5,7 @@ import {
   Lock, LogIn, LogOut, Filter, ChevronLeft, Image as ImageIcon, Trash2, ListChecks, Search, CheckCircle2, Video,
   ShieldAlert, Pencil, Save,
 } from "lucide-react";
-import crestImg from "./assets/crest.jpeg";
+import crestImg from "./assets/crest-panther.png";
 
 /* ---------- domain constants ---------- */
 const COMPANIES = ["א'", "ב'", "ג'", "פלס\"ם", "מסלול"];
@@ -211,8 +211,8 @@ function Header({ view, setView }) {
   return (
     <header style={{ background: HEADER, color: "#fff", borderBottom: "3px solid " + ACCENT }}>
       <div style={{ maxWidth: 720, margin: "0 auto", padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}>
-        <img ref={crestRef} onClick={handleCrestClick} src={crestImg} alt="סמל"
-          style={{ height: 46, width: 46, objectFit: "contain", borderRadius: 8, cursor: "pointer", userSelect: "none" }} draggable={false} />
+        <img ref={crestRef} onClick={handleCrestClick} src={crestImg} alt="סמל הגדוד"
+          style={{ height: 48, width: 64, objectFit: "contain", cursor: "pointer", userSelect: "none" }} draggable={false} />
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 800, fontSize: 18, lineHeight: 1.15 }}>טל"ת — בדיקת רכב לפני נסיעה</div>
           <div style={{ fontSize: 12, color: "#B9BDC7" }}>הפרויקטים של Mr.Gor</div>
