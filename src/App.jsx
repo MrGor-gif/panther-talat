@@ -798,12 +798,10 @@ function ManagerDatabase({ isAdmin, onLogout, onError, notify }) {
             <ShieldAlert size={13} /> מצב מנהל · עריכה ומחיקה
           </span>
         )}
-        {isAdmin && (
-          <button onClick={() => setNotifOpen(true)} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999,
-            background: HEADER, color: "#fff", border: "none", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>
-            <Bell size={14} /> התראות
-          </button>
-        )}
+        <button onClick={() => setNotifOpen(true)} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999,
+          background: HEADER, color: "#fff", border: "none", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>
+          <Bell size={14} /> התראות
+        </button>
         {onLogout && (
           <button onClick={onLogout} style={{ marginRight: "auto", background: "none", border: "none", color: MUTED, cursor: "pointer", fontSize: 13, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
             <LogOut size={14} /> יציאה
