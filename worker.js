@@ -118,6 +118,31 @@ export default {
       return json({ ok: true });
     }
 
+    // List registered devices (admin only). Returns sanitized info — platform,
+    // chosen filters, date — never the raw push endpoint or keys.
+    if (url.pathname === "/api/push-list" && request.method === "GET") {
+      const provided = request.headers.get("X-Admin-Pw");
+      const adminPw = await env.TALAT_KV.get("__admin_pw__");
+      if (!adminPw || provided !== adminPw) return json({ error: "forbidden" }, 403);
+      const list = await env.TALAT_KV.list({ prefix: "__push:" });
+      const values = await Promise.all(list.keys.map((k) => env.TALAT_KV.get(k.name)));
+      const devices = [];
+      for (const v of values) {
+        if (!v) continue;
+        let o;
+        try { o = JSON.parse(v); } catch (e) { continue; }
+        const ep = (o.subscription && o.subscription.endpoint) || "";
+        let platform = "לא ידוע";
+        if (/apple/i.test(ep)) platform = "iPhone (iOS)";
+        else if (/fcm|google/i.test(ep)) platform = "Android / Chrome";
+        else if (/mozilla|firefox/i.test(ep)) platform = "Firefox";
+        else if (/windows|microsoft|wns|notify/i.test(ep)) platform = "Windows";
+        devices.push({ platform, filters: o.filters || {}, updatedAt: o.updatedAt || null });
+      }
+      devices.sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+      return json({ count: devices.length, devices });
+    }
+
     // Send a test push to a single subscription (used by the settings UI).
     if (url.pathname === "/api/push-test" && request.method === "POST") {
       const body = await request.json().catch(() => null);

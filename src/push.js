@@ -101,6 +101,14 @@ export async function disablePush() {
   return true;
 }
 
+// Admin-only: list registered devices (sanitized). `adminPw` is sent as a
+// header and checked server-side against the stored manager password.
+export async function getPushDevices(adminPw) {
+  const res = await fetch("/api/push-list", { headers: { "X-Admin-Pw": adminPw || "" } });
+  if (!res.ok) throw new Error("push-list failed (" + res.status + ")");
+  return res.json();
+}
+
 export async function sendTestPush() {
   const reg = await navigator.serviceWorker.ready;
   const sub = await reg.pushManager.getSubscription();

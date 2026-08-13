@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import "./storage.js";
 import { queueReport, sendReportToServer, syncPending, countPending } from "./offline.js";
-import { pushSupported, isStandalone, getPushState, loadSavedFilters, enablePush, saveFilters, disablePush, sendTestPush } from "./push.js";
+import { pushSupported, isStandalone, getPushState, loadSavedFilters, enablePush, saveFilters, disablePush, sendTestPush, getPushDevices } from "./push.js";
 import {
   Truck, ClipboardCheck, Camera, X, Check, AlertTriangle, ShieldCheck,
   Lock, LogIn, LogOut, Filter, ChevronLeft, Image as ImageIcon, Trash2, ListChecks, Search, CheckCircle2, Video,
@@ -21,6 +21,18 @@ const NOTIFY_PARAMS = [
   ["toolsMissing", "חסר כלי עבודה"],
   ["extraFaults", "תקלות נוספות"],
 ];
+const NOTIFY_PARAM_LABELS = Object.fromEntries(NOTIFY_PARAMS);
+const SEVERITY_LABELS = { red: "אדום", yellow: "צהוב", green: "ירוק" };
+
+// Short human summary of a device's notification filter.
+function summarizeFilters(f) {
+  const parts = [];
+  const comp = f.companies || [], sev = f.severities || [], par = f.params || [];
+  parts.push(comp.length ? "פלוגות: " + comp.join(", ") : "כל הפלוגות");
+  parts.push(sev.length ? "חומרה: " + sev.map((s) => SEVERITY_LABELS[s] || s).join(", ") : "כל הרמות");
+  if (par.length) parts.push(par.map((p) => NOTIFY_PARAM_LABELS[p] || p).join(", "));
+  return parts.join(" · ");
+}
 import crestImg from "./assets/crest-panther.png";
 
 /* ---------- domain constants ---------- */
@@ -908,7 +920,7 @@ function ManagerDatabase({ isAdmin, onLogout, onError, notify }) {
         />
       )}
       {notifOpen && (
-        <NotificationSettingsModal onClose={() => setNotifOpen(false)} onError={onError} notify={notify} />
+        <NotificationSettingsModal isAdmin={isAdmin} onClose={() => setNotifOpen(false)} onError={onError} notify={notify} />
       )}
     </div>
   );
@@ -1115,19 +1127,26 @@ function NotifChip({ on, color, onClick, children }) {
   );
 }
 
-function NotificationSettingsModal({ onClose, onError, notify }) {
+function NotificationSettingsModal({ isAdmin, onClose, onError, notify }) {
   const [state, setState] = useState(null);
   const [filters, setFilters] = useState({ companies: [], severities: [], params: [] });
   const [busy, setBusy] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [devices, setDevices] = useState(null); // admin-only: registered devices
 
   const isIOS = typeof navigator !== "undefined" && /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+  const loadDevices = async () => {
+    try { setDevices(await getPushDevices(ADMIN_PASSWORD)); }
+    catch (e) { setDevices({ error: true }); }
+  };
 
   useEffect(() => {
     (async () => {
       setState(await getPushState());
       const saved = loadSavedFilters();
       if (saved) setFilters({ companies: saved.companies || [], severities: saved.severities || [], params: saved.params || [] });
+      if (isAdmin) loadDevices();
     })();
   }, []);
 
@@ -1248,6 +1267,36 @@ function NotificationSettingsModal({ onClose, onError, notify }) {
               </>
             )}
           </>
+        )}
+
+        {isAdmin && (
+          <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid " + BORDER }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10 }}>
+              <Smartphone size={17} />
+              <span style={{ fontWeight: 800, fontSize: 15 }}>מכשירים רשומים</span>
+              {devices && !devices.error && (
+                <span style={{ background: HEADER, color: "#fff", borderRadius: 999, padding: "1px 9px", fontSize: 12, fontWeight: 700 }}>{devices.count}</span>
+              )}
+              <button onClick={loadDevices} title="רענן" style={{ marginRight: "auto", background: "none", border: "none", color: MUTED, cursor: "pointer", display: "inline-flex" }}><RefreshCw size={15} /></button>
+            </div>
+            {devices === null ? (
+              <div style={{ color: MUTED, fontSize: 13 }}>טוען…</div>
+            ) : devices.error ? (
+              <div style={{ color: STATUS.red.color, fontSize: 13 }}>שגיאה בטעינת הרשימה</div>
+            ) : devices.count === 0 ? (
+              <div style={{ color: MUTED, fontSize: 13 }}>עדיין אין מכשירים רשומים להתראות</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {devices.devices.map((d, i) => (
+                  <div key={i} style={{ border: "1px solid " + BORDER, borderRadius: 10, padding: "10px 12px" }}>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>{d.platform}</div>
+                    <div style={{ fontSize: 12.5, color: MUTED, marginTop: 2 }}>{summarizeFilters(d.filters)}</div>
+                    {d.updatedAt && <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>נרשם: {fmtDateTime(d.updatedAt)}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>
