@@ -1,11 +1,26 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import "./storage.js";
 import { queueReport, sendReportToServer, syncPending, countPending } from "./offline.js";
+import { pushSupported, isStandalone, getPushState, loadSavedFilters, enablePush, saveFilters, disablePush, sendTestPush } from "./push.js";
 import {
   Truck, ClipboardCheck, Camera, X, Check, AlertTriangle, ShieldCheck,
   Lock, LogIn, LogOut, Filter, ChevronLeft, Image as ImageIcon, Trash2, ListChecks, Search, CheckCircle2, Video,
-  ShieldAlert, Pencil, Save, WifiOff, CloudUpload, RefreshCw,
+  ShieldAlert, Pencil, Save, WifiOff, CloudUpload, RefreshCw, Bell, BellOff, Smartphone,
 } from "lucide-react";
+
+// Specific-fault parameters a commander can subscribe to (keys match worker.js)
+const NOTIFY_PARAMS = [
+  ["sprayersBad", "מתיזים לא תקין"],
+  ["tireBad", "לחץ אוויר לא תקין"],
+  ["lightsBad", "תאורה לא תקינה"],
+  ["no360", "360° לא מאושר"],
+  ["rearDamage", "נזק במושבים אחוריים"],
+  ["fuelLow", "מפלס דלק 1/4"],
+  ["coolantLow", "מי קירור מתחת לקו האמצע"],
+  ["noTrunkLock", "אין מנעול תא מטען"],
+  ["toolsMissing", "חסר כלי עבודה"],
+  ["extraFaults", "תקלות נוספות"],
+];
 import crestImg from "./assets/crest-panther.png";
 
 /* ---------- domain constants ---------- */
@@ -697,6 +712,7 @@ function ManagerDatabase({ isAdmin, onLogout, onError, notify }) {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [notifOpen, setNotifOpen] = useState(false);
   const [q, setQ] = useState("");
   const [fCompany, setFCompany] = useState("");
   const [fDriver, setFDriver] = useState("");
@@ -781,6 +797,12 @@ function ManagerDatabase({ isAdmin, onLogout, onError, notify }) {
             background: ACCENT + "22", color: "#8A5A00", border: "1px solid " + ACCENT + "66", fontWeight: 800, fontSize: 12 }}>
             <ShieldAlert size={13} /> מצב מנהל · עריכה ומחיקה
           </span>
+        )}
+        {isAdmin && (
+          <button onClick={() => setNotifOpen(true)} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999,
+            background: HEADER, color: "#fff", border: "none", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>
+            <Bell size={14} /> התראות
+          </button>
         )}
         {onLogout && (
           <button onClick={onLogout} style={{ marginRight: "auto", background: "none", border: "none", color: MUTED, cursor: "pointer", fontSize: 13, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
@@ -880,6 +902,9 @@ function ManagerDatabase({ isAdmin, onLogout, onError, notify }) {
           onClose={() => setEditing(null)}
           onError={onError}
         />
+      )}
+      {notifOpen && (
+        <NotificationSettingsModal onClose={() => setNotifOpen(false)} onError={onError} notify={notify} />
       )}
     </div>
   );
@@ -1066,6 +1091,159 @@ function EditModal({ record, onSaved, onClose, onError }) {
           <button onClick={onClose} className="actbtn actbtn-cancel">ביטול</button>
         </div>
         </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- admin notification settings (push) ---------- */
+function NotifChip({ on, color, onClick, children }) {
+  const c = color || HEADER;
+  return (
+    <button type="button" onClick={onClick}
+      style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 11px", borderRadius: 9,
+        border: "1.5px solid " + (on ? c : BORDER), background: on ? c : "#fff", color: on ? "#fff" : TEXT,
+        fontSize: 13.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+      <span style={{ width: 15, height: 15, borderRadius: 5, border: "1.5px solid " + (on ? "#fff" : BORDER), display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>{on && <Check size={11} />}</span>
+      {children}
+    </button>
+  );
+}
+
+function NotificationSettingsModal({ onClose, onError, notify }) {
+  const [state, setState] = useState(null);
+  const [filters, setFilters] = useState({ companies: [], severities: [], params: [] });
+  const [busy, setBusy] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+
+  const isIOS = typeof navigator !== "undefined" && /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+  useEffect(() => {
+    (async () => {
+      setState(await getPushState());
+      const saved = loadSavedFilters();
+      if (saved) setFilters({ companies: saved.companies || [], severities: saved.severities || [], params: saved.params || [] });
+    })();
+  }, []);
+
+  const toggle = (key, val) => setFilters((p) => ({ ...p, [key]: p[key].includes(val) ? p[key].filter((x) => x !== val) : [...p[key], val] }));
+  const refresh = async () => setState(await getPushState());
+
+  async function onEnable() {
+    setBusy(true);
+    try { await enablePush(filters); await refresh(); notify && notify("התראות הופעלו ✓"); }
+    catch (e) {
+      const m = String(e && e.message);
+      if (m.includes("permission")) onError('ההרשאה נדחתה — יש לאשר קבלת התראות בדפדפן');
+      else if (m.includes("not-supported")) onError("הדפדפן לא תומך בהתראות");
+      else onError("הפעלת ההתראות נכשלה");
+    } finally { setBusy(false); }
+  }
+  async function onSave() {
+    setBusy(true);
+    try { await saveFilters(filters); notify && notify("ההעדפות נשמרו ✓"); }
+    catch (e) { onError("שמירת ההעדפות נכשלה"); } finally { setBusy(false); }
+  }
+  async function onDisable() {
+    setBusy(true);
+    try { await disablePush(); await refresh(); notify && notify("ההתראות כובו"); }
+    catch (e) { onError("כיבוי ההתראות נכשל"); } finally { setBusy(false); }
+  }
+  async function onTest() {
+    setBusy(true);
+    try { const r = await sendTestPush(); if (r && r.ok) notify && notify("נשלחה התראת בדיקה 🔔"); else onError("שליחת הבדיקה נכשלה" + (r && r.status ? ` (${r.status})` : "")); }
+    catch (e) { onError("שליחת הבדיקה נכשלה"); } finally { setBusy(false); }
+  }
+
+  const iosNeedsInstall = isIOS && state && !state.standalone;
+  const canEnable = state && state.supported && !iosNeedsInstall;
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460, borderTop: "5px solid " + ACCENT }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+          <div style={{ fontWeight: 800, fontSize: 18, display: "flex", alignItems: "center", gap: 8 }}>
+            <Bell size={19} /> הגדרות התראות
+          </div>
+          <button onClick={onClose} className="xbtn"><X size={20} /></button>
+        </div>
+        <div style={{ fontSize: 13.5, color: MUTED, marginBottom: 14, lineHeight: 1.5 }}>
+          בחר/י על אילו דיווחים חדשים לקבל התראה למכשיר. השאר/י קטגוריה ריקה = כל האפשרויות.
+        </div>
+
+        {/* help toggle */}
+        <button onClick={() => setShowHelp((v) => !v)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, border: "1px solid " + BORDER, background: "#F8FAFC", color: TEXT, fontWeight: 700, fontSize: 13.5, cursor: "pointer", fontFamily: "inherit", marginBottom: iosNeedsInstall ? 10 : 14 }}>
+          <Smartphone size={16} /> איך מפעילים? (אייפון / אנדרואיד)
+          <ChevronLeft size={16} style={{ marginRight: "auto", transform: showHelp ? "rotate(-90deg)" : "none", transition: ".15s" }} />
+        </button>
+        {showHelp && (
+          <div style={{ border: "1px solid " + BORDER, borderRadius: 10, padding: "12px 14px", marginBottom: 14, fontSize: 13, lineHeight: 1.6, background: "#fff" }}>
+            <div style={{ fontWeight: 800, marginBottom: 4 }}>🍏 אייפון (חובה להתקין קודם):</div>
+            <ol style={{ margin: "0 18px 12px 0", padding: 0 }}>
+              <li>פתח/י את האתר ב-<b>Safari</b>.</li>
+              <li>לחצ/י על כפתור <b>השיתוף</b> (ריבוע עם חץ כלפי מעלה).</li>
+              <li>בחר/י <b>"הוסף למסך הבית"</b>.</li>
+              <li>פתח/י את האפליקציה <b>מסמל מסך הבית</b> (לא מ-Safari).</li>
+              <li>חזר/י לכאן, לחצ/י "הפעל התראות" ואשר/י.</li>
+            </ol>
+            <div style={{ fontWeight: 800, marginBottom: 4 }}>🤖 אנדרואיד:</div>
+            <ol style={{ margin: "0 18px 0 0", padding: 0 }}>
+              <li>פתח/י את האתר ב-<b>Chrome</b>.</li>
+              <li>מומלץ: תפריט ⋮ ← <b>"התקנת אפליקציה"</b>.</li>
+              <li>לחצ/י "הפעל התראות" ו<b>אשר/י</b> את בקשת ההרשאה.</li>
+            </ol>
+          </div>
+        )}
+
+        {state === null ? (
+          <div style={{ color: MUTED, padding: "10px 0" }}>טוען…</div>
+        ) : !state.supported ? (
+          <div style={{ background: STATUS.red.bg, border: "1px solid " + STATUS.red.color + "44", borderRadius: 10, padding: "12px 14px", color: STATUS.red.color, fontSize: 13.5 }}>
+            הדפדפן במכשיר זה לא תומך בהתראות. נסה/י מכשיר או דפדפן אחר (ראה/י ההסבר למעלה).
+          </div>
+        ) : iosNeedsInstall ? (
+          <div style={{ background: STATUS.yellow.bg, border: "1px solid " + STATUS.yellow.color + "55", borderRadius: 10, padding: "12px 14px", color: "#8A5A00", fontSize: 13.5, fontWeight: 600 }}>
+            <WifiOff size={16} style={{ verticalAlign: "middle", marginLeft: 6 }} />
+            באייפון יש להתקין קודם את האפליקציה למסך הבית ולפתוח אותה משם — ראה/י ההסבר למעלה.
+          </div>
+        ) : (
+          <>
+            {/* filters */}
+            <div style={{ fontWeight: 700, fontSize: 14, margin: "2px 0 7px" }}>פלוגה</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 14 }}>
+              {COMPANIES.map((c) => <NotifChip key={c} on={filters.companies.includes(c)} color={companyColor(c)} onClick={() => toggle("companies", c)}>{c}</NotifChip>)}
+            </div>
+
+            <div style={{ fontWeight: 700, fontSize: 14, margin: "2px 0 7px" }}>רמת חומרה</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 14 }}>
+              {[["red", "🔴 אדום"], ["yellow", "🟡 צהוב"], ["green", "🟢 ירוק"]].map(([k, lbl]) =>
+                <NotifChip key={k} on={filters.severities.includes(k)} color={STATUS[k].color} onClick={() => toggle("severities", k)}>{lbl}</NotifChip>)}
+            </div>
+
+            <div style={{ fontWeight: 700, fontSize: 14, margin: "2px 0 7px" }}>פרמטרים ספציפיים</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 18 }}>
+              {NOTIFY_PARAMS.map(([k, lbl]) => <NotifChip key={k} on={filters.params.includes(k)} onClick={() => toggle("params", k)}>{lbl}</NotifChip>)}
+            </div>
+
+            {/* actions */}
+            {!state.subscribed ? (
+              <button className="submit" disabled={busy} onClick={onEnable}>
+                <Bell size={18} /> {busy ? "מפעיל…" : "הפעל התראות"}
+              </button>
+            ) : (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 12, color: STATUS.green.color, fontWeight: 700, fontSize: 14 }}>
+                  <CheckCircle2 size={17} /> התראות פעילות במכשיר זה
+                </div>
+                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                  <button className="actbtn actbtn-save" disabled={busy} onClick={onSave}><Save size={17} /> שמור העדפות</button>
+                  <button className="actbtn" disabled={busy} onClick={onTest} style={{ flex: "0 0 auto" }}><Bell size={16} /> בדיקה</button>
+                </div>
+                <button className="actbtn actbtn-del" disabled={busy} onClick={onDisable} style={{ width: "100%" }}><BellOff size={17} /> כבה התראות במכשיר זה</button>
+              </>
+            )}
+          </>
         )}
       </div>
     </div>

@@ -56,3 +56,39 @@ self.addEventListener("fetch", (event) => {
     )
   );
 });
+
+// --- Web Push ---
+self.addEventListener("push", (event) => {
+  let title = 'טל"ת — דיווח חדש';
+  let body = 'התקבל דיווח טל"ת חדש שתואם להתראות שלך';
+  try {
+    if (event.data) {
+      const d = event.data.json();
+      if (d.title) title = d.title;
+      if (d.body) body = d.body;
+    }
+  } catch (e) { /* payload-less push — use defaults */ }
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+      dir: "rtl",
+      lang: "he",
+      tag: "talat-report",
+      renotify: true,
+      data: { url: "/" },
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil((async () => {
+    const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const c of all) {
+      if (c.url.startsWith(self.location.origin)) { try { await c.focus(); return; } catch (e) {} }
+    }
+    await self.clients.openWindow("/");
+  })());
+});
