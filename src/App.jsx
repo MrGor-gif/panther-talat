@@ -741,13 +741,14 @@ function ManagerDatabase({ isAdmin, onLogout, onError, notify }) {
   const drivers = useMemo(() => [...new Set(records.map((r) => r.driver).filter(Boolean))].sort(), [records]);
   const commanders = useMemo(() => [...new Set(records.map((r) => r.commander).filter(Boolean))].sort(), [records]);
 
-  const filtered = useMemo(() => {
+  // "scoped" = everything except the status filter, so the red/yellow/green
+  // counts reflect the chosen company/driver/commander/search.
+  const scoped = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return records.filter((r) => {
       if (fCompany && r.company !== fCompany) return false;
       if (fDriver && r.driver !== fDriver) return false;
       if (fCommander && r.commander !== fCommander) return false;
-      if (fStatus && r.status !== fStatus) return false;
       if (needle) {
         const hay = [r.vehicleNumber, r.driver, r.commander, r.company, r.mission, r.doresNumber, r.additionalFaults]
           .filter(Boolean).join(" ").toLowerCase();
@@ -755,13 +756,18 @@ function ManagerDatabase({ isAdmin, onLogout, onError, notify }) {
       }
       return true;
     });
-  }, [records, q, fCompany, fDriver, fCommander, fStatus]);
+  }, [records, q, fCompany, fDriver, fCommander]);
+
+  const filtered = useMemo(
+    () => (fStatus ? scoped.filter((r) => r.status === fStatus) : scoped),
+    [scoped, fStatus]
+  );
 
   const counts = useMemo(() => {
     const c = { red: 0, yellow: 0, green: 0 };
-    records.forEach((r) => { c[r.status] = (c[r.status] || 0) + 1; });
+    scoped.forEach((r) => { c[r.status] = (c[r.status] || 0) + 1; });
     return c;
-  }, [records]);
+  }, [scoped]);
 
   const clearFilters = () => { setQ(""); setFCompany(""); setFDriver(""); setFCommander(""); setFStatus(""); };
   const hasFilters = q || fCompany || fDriver || fCommander || fStatus;
