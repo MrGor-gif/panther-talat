@@ -1106,9 +1106,12 @@ function DashCard({ title, icon, children }) {
 }
 
 function Dashboard({ records }) {
-  const total = records.length;
+  const [company, setCompany] = useState("");
+  const data = useMemo(() => (company ? records.filter((r) => r.company === company) : records), [records, company]);
+
+  const total = data.length;
   const counts = { red: 0, yellow: 0, green: 0 };
-  records.forEach((r) => { counts[r.status] = (counts[r.status] || 0) + 1; });
+  data.forEach((r) => { counts[r.status] = (counts[r.status] || 0) + 1; });
   const pct = (n) => total ? Math.round((n / total) * 100) : 0;
 
   const days = [];
@@ -1116,11 +1119,13 @@ function Dashboard({ records }) {
   for (let i = 6; i >= 0; i--) { const d = new Date(today); d.setDate(d.getDate() - i); days.push(d); }
   const dayCounts = days.map((d) => {
     const next = new Date(d); next.setDate(d.getDate() + 1);
-    const c = records.filter((r) => { const t = new Date(r.createdAt); return t >= d && t < next; }).length;
+    const c = data.filter((r) => { const t = new Date(r.createdAt); return t >= d && t < next; }).length;
     return { d, c };
   });
   const maxDay = Math.max(1, ...dayCounts.map((x) => x.c));
 
+  // per-company comparison is computed over ALL records (only shown when not
+  // already filtered to a single company).
   const byCompany = COMPANIES.map((co) => {
     const rs = records.filter((r) => r.company === co);
     const c = { red: 0, yellow: 0, green: 0 };
@@ -1128,11 +1133,26 @@ function Dashboard({ records }) {
     return { co, total: rs.length, ...c };
   }).filter((x) => x.total > 0);
 
-  const faultCounts = NOTIFY_PARAMS.map(([k, label]) => ({ k, label, n: records.filter((r) => paramConditions(r)[k]).length }))
+  const faultCounts = NOTIFY_PARAMS.map(([k, label]) => ({ k, label, n: data.filter((r) => paramConditions(r)[k]).length }))
     .filter((x) => x.n > 0).sort((a, b) => b.n - a.n);
   const maxFault = Math.max(1, ...faultCounts.map((x) => x.n));
 
-  if (total === 0) return <div style={{ textAlign: "center", color: MUTED, padding: 40, background: SURFACE, borderRadius: 12, border: "1px dashed " + BORDER }}>אין נתונים להצגה</div>;
+  const companyFilter = (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 7, alignItems: "center" }}>
+      <span style={{ fontSize: 13, color: MUTED, fontWeight: 700, marginLeft: 2 }}>פלוגה:</span>
+      <NotifChip on={company === ""} onClick={() => setCompany("")}>הכל</NotifChip>
+      {COMPANIES.map((c) => <NotifChip key={c} on={company === c} color={companyColor(c)} onClick={() => setCompany(company === c ? "" : c)}>{c}</NotifChip>)}
+    </div>
+  );
+
+  if (total === 0) return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {companyFilter}
+      <div style={{ textAlign: "center", color: MUTED, padding: 40, background: SURFACE, borderRadius: 12, border: "1px dashed " + BORDER }}>
+        אין נתונים{company ? ` עבור פלוגה ${company}` : ""} להצגה
+      </div>
+    </div>
+  );
 
   const tile = (label, value, sub, color) => (
     <div style={{ flex: 1, background: SURFACE, border: "1px solid " + BORDER, borderRadius: 12, padding: "12px 8px", textAlign: "center" }}>
@@ -1143,6 +1163,7 @@ function Dashboard({ records }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {companyFilter}
       <div style={{ display: "flex", gap: 8 }}>
         {tile('סה"כ', total, null, HEADER)}
         {tile("אדום", counts.red, pct(counts.red), STATUS.red.color)}
@@ -1162,6 +1183,7 @@ function Dashboard({ records }) {
         </div>
       </DashCard>
 
+      {!company && (
       <DashCard title="לפי פלוגה" icon={<Filter size={16} />}>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {byCompany.map((x) => (
@@ -1179,6 +1201,7 @@ function Dashboard({ records }) {
           ))}
         </div>
       </DashCard>
+      )}
 
       <DashCard title="התקלות הנפוצות" icon={<AlertTriangle size={16} />}>
         {faultCounts.length === 0 ? (
