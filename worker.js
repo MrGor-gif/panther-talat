@@ -161,7 +161,10 @@ export default {
       const raw = await env.TALAT_KV.get("__push:" + id);
       if (!raw) return json({ error: "subscription not found" }, 404);
       try {
-        const status = await sendPush(env, JSON.parse(raw).subscription);
+        const status = await sendPush(env, JSON.parse(raw).subscription, {
+          title: "בדיקת התראה",
+          body: 'זו התראת בדיקה מאתר הטל"ת ✓',
+        });
         return json({ ok: status >= 200 && status < 300, status });
       } catch (e) {
         return json({ error: String(e && e.message || e) }, 500);
@@ -228,7 +231,7 @@ async function notifyMatching(env, report) {
     try { rec = JSON.parse(e.v); } catch (err) { continue; }
     if (!matchesFilters(report, rec.filters)) continue;
     try {
-      const status = await sendPush(env, rec.subscription);
+      const status = await sendPush(env, rec.subscription, buildMessage(report));
       if (status === 404 || status === 410) await env.TALAT_KV.delete(e.name); // subscription expired
     } catch (err) { /* ignore individual send failures */ }
   }
@@ -270,14 +273,90 @@ async function vapidAuthHeader(env, endpoint) {
   return `vapid t=${jwt}, k=${VAPID_PUBLIC}`;
 }
 
-// Payload-less push ("tickle") — no body, so no aes128gcm encryption needed.
-async function sendPush(env, subscription) {
+function b64urlToBytes(s) {
+  s = String(s).replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  const bin = atob(s);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+function concatBytes(...arrays) {
+  const len = arrays.reduce((n, a) => n + a.length, 0);
+  const out = new Uint8Array(len);
+  let o = 0;
+  for (const a of arrays) { out.set(a, o); o += a.length; }
+  return out;
+}
+
+// Encrypt a push payload per RFC 8291 (aes128gcm) so the notification can carry
+// text (vehicle / company / severity).
+async function encryptPayload(plaintextStr, p256dhB64, authB64) {
+  const enc = new TextEncoder();
+  const plaintext = enc.encode(plaintextStr);
+  const uaPublic = b64urlToBytes(p256dhB64);   // 65 bytes
+  const authSecret = b64urlToBytes(authB64);   // 16 bytes
+
+  const as = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
+  const asPublic = new Uint8Array(await crypto.subtle.exportKey("raw", as.publicKey)); // 65 bytes
+  const uaKey = await crypto.subtle.importKey("raw", uaPublic, { name: "ECDH", namedCurve: "P-256" }, false, []);
+  const ecdhSecret = new Uint8Array(await crypto.subtle.deriveBits({ name: "ECDH", public: uaKey }, as.privateKey, 256));
+
+  // stage 1 (RFC 8291): combine the ECDH secret with the auth secret
+  const keyInfo = concatBytes(enc.encode("WebPush: info"), new Uint8Array([0]), uaPublic, asPublic);
+  const ecdhKey = await crypto.subtle.importKey("raw", ecdhSecret, "HKDF", false, ["deriveBits"]);
+  const ikm = new Uint8Array(await crypto.subtle.deriveBits({ name: "HKDF", hash: "SHA-256", salt: authSecret, info: keyInfo }, ecdhKey, 256));
+
+  // stage 2 (RFC 8188 aes128gcm): derive CEK + nonce from a random record salt
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const ikmKey = await crypto.subtle.importKey("raw", ikm, "HKDF", false, ["deriveBits"]);
+  const cek = new Uint8Array(await crypto.subtle.deriveBits({ name: "HKDF", hash: "SHA-256", salt, info: concatBytes(enc.encode("Content-Encoding: aes128gcm"), new Uint8Array([0])) }, ikmKey, 128));
+  const nonce = new Uint8Array(await crypto.subtle.deriveBits({ name: "HKDF", hash: "SHA-256", salt, info: concatBytes(enc.encode("Content-Encoding: nonce"), new Uint8Array([0])) }, ikmKey, 96));
+
+  const aesKey = await crypto.subtle.importKey("raw", cek, "AES-GCM", false, ["encrypt"]);
+  const record = concatBytes(plaintext, new Uint8Array([2])); // 0x02 = last-record delimiter
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce, tagLength: 128 }, aesKey, record));
+
+  // aes128gcm header: salt(16) + rs(4, uint32 BE = 4096) + idlen(1) + keyid(as_public 65)
+  const header = concatBytes(salt, new Uint8Array([0, 0, 0x10, 0x00]), new Uint8Array([asPublic.length]), asPublic);
+  return concatBytes(header, ct);
+}
+
+// Send a push. If `message` + subscription keys are present, send an encrypted
+// payload; if that fails (or on 400), fall back to a payload-less "tickle" so a
+// notification still arrives.
+async function sendPush(env, subscription, message) {
   const auth = await vapidAuthHeader(env, subscription.endpoint);
-  const res = await fetch(subscription.endpoint, {
-    method: "POST",
-    headers: { "Authorization": auth, "TTL": "86400" },
-  });
-  return res.status;
+  const sub = subscription || {};
+  if (message && sub.keys && sub.keys.p256dh && sub.keys.auth) {
+    try {
+      const body = await encryptPayload(JSON.stringify(message), sub.keys.p256dh, sub.keys.auth);
+      const res = await fetch(sub.endpoint, {
+        method: "POST",
+        headers: {
+          "Authorization": auth,
+          "TTL": "86400",
+          "Content-Encoding": "aes128gcm",
+          "Content-Type": "application/octet-stream",
+        },
+        body,
+      });
+      if (res.status !== 400) return res.status;
+      // 400 → likely a payload problem; fall through to payload-less
+    } catch (e) { /* fall through to payload-less */ }
+  }
+  const res2 = await fetch(sub.endpoint, { method: "POST", headers: { "Authorization": auth, "TTL": "86400" } });
+  return res2.status;
+}
+
+// Notification text for a matched report.
+function buildMessage(report) {
+  const st = reportStatus(report);
+  const sev = st === "red" ? '🔴 דורש התייחסות טנ"א' : st === "yellow" ? "🟡 התייחסות פלוגתית" : "🟢 תקין";
+  return {
+    title: 'דיווח טל"ת חדש',
+    body: `צ' ${report.vehicleNumber || "—"} · פלוגה ${report.company || "—"} · ${sev}`,
+  };
 }
 
 async function sha256hex(str) {

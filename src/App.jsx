@@ -6,7 +6,24 @@ import {
   Truck, ClipboardCheck, Camera, X, Check, AlertTriangle, ShieldCheck,
   Lock, LogIn, LogOut, Filter, ChevronLeft, Image as ImageIcon, Trash2, ListChecks, Search, CheckCircle2, Video,
   ShieldAlert, Pencil, Save, WifiOff, CloudUpload, RefreshCw, Bell, BellOff, Smartphone, ChevronRight,
+  BarChart3, TrendingUp,
 } from "lucide-react";
+
+// Fault conditions per report (mirrors worker.js paramConditions) — for stats.
+function paramConditions(r) {
+  return {
+    sprayersBad: r.sprayers === "לא תקין",
+    tireBad: r.tirePressure === "לא תקין",
+    lightsBad: r.lights === "לא תקין",
+    no360: r.photo360 === "לא מאשר",
+    rearDamage: !!(r.rearSeatsDamage && String(r.rearSeatsDamage).trim()),
+    fuelLow: r.fuel === "1/4",
+    coolantLow: r.coolant === "מים מתחת לקו האמצע",
+    noTrunkLock: r.trunkLock === "לא קיים",
+    toolsMissing: TOOLS.some((t) => !(r.tools || []).includes(t)),
+    extraFaults: !!(r.additionalFaults && String(r.additionalFaults).trim()),
+  };
+}
 
 // Specific-fault parameters a commander can subscribe to (keys match worker.js)
 const NOTIFY_PARAMS = [
@@ -62,6 +79,7 @@ const SURFACE = "#FFFFFF";
 const BORDER = "#E3E5EA";
 const TEXT = "#1D2027";
 const MUTED = "#6B7280";
+const DANGER_BAR = "#C4463A";
 
 const STATUS = {
   red: { label: "לא תקין — דורש התייחסות טנ\"א", color: "#C4463A", bg: "#FBE9E7", dot: "#C4463A" },
@@ -725,6 +743,8 @@ function ManagerDatabase({ isAdmin, onLogout, onError, notify }) {
   const [selected, setSelected] = useState(null);
   const [editing, setEditing] = useState(null);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [vehicleHistory, setVehicleHistory] = useState(null);
+  const [tab, setTab] = useState("list"); // list | stats
   const [page, setPage] = useState(0);
   const [q, setQ] = useState("");
   const [fCompany, setFCompany] = useState("");
@@ -839,6 +859,15 @@ function ManagerDatabase({ isAdmin, onLogout, onError, notify }) {
         )}
       </div>
 
+      <div className="dbtabs">
+        <button className={"dbtab " + (tab === "list" ? "dbtab-on" : "")} onClick={() => setTab("list")}><ListChecks size={15} /> רשימה</button>
+        <button className={"dbtab " + (tab === "stats" ? "dbtab-on" : "")} onClick={() => setTab("stats")}><BarChart3 size={15} /> סטטיסטיקה</button>
+      </div>
+
+      {tab === "stats" ? (
+        <Dashboard records={records} />
+      ) : (
+      <>
       {/* status summary */}
       <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         {["red", "yellow", "green"].map((s) => (
@@ -919,6 +948,8 @@ function ManagerDatabase({ isAdmin, onLogout, onError, notify }) {
           <PaginationBar page={safePage} pageCount={pageCount} onPage={(p) => { setPage(p); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
         </>
       )}
+      </>
+      )}
 
       {selected && (
         <DetailModal
@@ -926,7 +957,16 @@ function ManagerDatabase({ isAdmin, onLogout, onError, notify }) {
           isAdmin={isAdmin}
           onEdit={() => { setEditing(selected); setSelected(null); }}
           onDelete={() => handleDelete(selected)}
+          onVehicleHistory={(v) => { setSelected(null); setVehicleHistory(v); }}
           onClose={() => setSelected(null)}
+        />
+      )}
+      {vehicleHistory && (
+        <VehicleHistoryModal
+          vehicle={vehicleHistory}
+          records={records}
+          onSelect={(rec) => { setVehicleHistory(null); setSelected(rec); }}
+          onClose={() => setVehicleHistory(null)}
         />
       )}
       {editing && (
@@ -944,7 +984,7 @@ function ManagerDatabase({ isAdmin, onLogout, onError, notify }) {
   );
 }
 
-function DetailModal({ record: r, onClose, isAdmin, onEdit, onDelete }) {
+function DetailModal({ record: r, onClose, isAdmin, onEdit, onDelete, onVehicleHistory }) {
   const { status, reasons } = computeStatus(r);
   // The list is loaded without images (for speed) — fetch the full record now
   // to show its photos.
@@ -997,7 +1037,14 @@ function DetailModal({ record: r, onClose, isAdmin, onEdit, onDelete }) {
           </div>
           <button onClick={onClose} className="xbtn"><X size={20} /></button>
         </div>
-        <div style={{ fontSize: 13, color: MUTED, marginBottom: 12 }}>{fmtDateTime(r.createdAt)}</div>
+        <div style={{ fontSize: 13, color: MUTED, marginBottom: 10 }}>{fmtDateTime(r.createdAt)}</div>
+
+        {onVehicleHistory && r.vehicleNumber && (
+          <button onClick={() => onVehicleHistory(r.vehicleNumber)}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 9, border: "1px solid " + BORDER, background: "#fff", color: TEXT, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", marginBottom: 14 }}>
+            <ListChecks size={15} /> כל הטל"תים של צ' {r.vehicleNumber}
+          </button>
+        )}
 
         <div style={{ marginBottom: 14 }}><StatusBadge status={status} /></div>
         {reasons.length > 0 && (
@@ -1043,6 +1090,160 @@ function DetailModal({ record: r, onClose, isAdmin, onEdit, onDelete }) {
             <button onClick={onDelete} className="actbtn actbtn-del"><Trash2 size={17} /> מחיקה</button>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- manager dashboard / statistics ---------- */
+function DashCard({ title, icon, children }) {
+  return (
+    <div style={{ background: SURFACE, border: "1px solid " + BORDER, borderRadius: 14, padding: "14px 16px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, fontWeight: 800, fontSize: 15, marginBottom: 12 }}>{icon}{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function Dashboard({ records }) {
+  const total = records.length;
+  const counts = { red: 0, yellow: 0, green: 0 };
+  records.forEach((r) => { counts[r.status] = (counts[r.status] || 0) + 1; });
+  const pct = (n) => total ? Math.round((n / total) * 100) : 0;
+
+  const days = [];
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  for (let i = 6; i >= 0; i--) { const d = new Date(today); d.setDate(d.getDate() - i); days.push(d); }
+  const dayCounts = days.map((d) => {
+    const next = new Date(d); next.setDate(d.getDate() + 1);
+    const c = records.filter((r) => { const t = new Date(r.createdAt); return t >= d && t < next; }).length;
+    return { d, c };
+  });
+  const maxDay = Math.max(1, ...dayCounts.map((x) => x.c));
+
+  const byCompany = COMPANIES.map((co) => {
+    const rs = records.filter((r) => r.company === co);
+    const c = { red: 0, yellow: 0, green: 0 };
+    rs.forEach((r) => { c[r.status] = (c[r.status] || 0) + 1; });
+    return { co, total: rs.length, ...c };
+  }).filter((x) => x.total > 0);
+
+  const faultCounts = NOTIFY_PARAMS.map(([k, label]) => ({ k, label, n: records.filter((r) => paramConditions(r)[k]).length }))
+    .filter((x) => x.n > 0).sort((a, b) => b.n - a.n);
+  const maxFault = Math.max(1, ...faultCounts.map((x) => x.n));
+
+  if (total === 0) return <div style={{ textAlign: "center", color: MUTED, padding: 40, background: SURFACE, borderRadius: 12, border: "1px dashed " + BORDER }}>אין נתונים להצגה</div>;
+
+  const tile = (label, value, sub, color) => (
+    <div style={{ flex: 1, background: SURFACE, border: "1px solid " + BORDER, borderRadius: 12, padding: "12px 8px", textAlign: "center" }}>
+      <div style={{ fontSize: 24, fontWeight: 800, color }}>{value}</div>
+      <div style={{ fontSize: 12, color: MUTED }}>{label}{sub != null ? ` · ${sub}%` : ""}</div>
+    </div>
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", gap: 8 }}>
+        {tile('סה"כ', total, null, HEADER)}
+        {tile("אדום", counts.red, pct(counts.red), STATUS.red.color)}
+        {tile("צהוב", counts.yellow, pct(counts.yellow), STATUS.yellow.color)}
+        {tile("ירוק", counts.green, pct(counts.green), STATUS.green.color)}
+      </div>
+
+      <DashCard title="דיווחים ב-7 הימים האחרונים" icon={<TrendingUp size={17} />}>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 110 }}>
+          {dayCounts.map(({ d, c }, i) => (
+            <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: c ? TEXT : MUTED }}>{c}</div>
+              <div style={{ width: "100%", maxWidth: 34, height: Math.round((c / maxDay) * 74) + 2, background: c ? ACCENT : BORDER, borderRadius: 5 }} />
+              <div style={{ fontSize: 10.5, color: MUTED }}>{d.getDate()}.{d.getMonth() + 1}</div>
+            </div>
+          ))}
+        </div>
+      </DashCard>
+
+      <DashCard title="לפי פלוגה" icon={<Filter size={16} />}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {byCompany.map((x) => (
+            <div key={x.co}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                <CompanyBadge company={x.co} />
+                <span style={{ marginRight: "auto", fontSize: 13, color: MUTED, fontWeight: 700 }}>{x.total}</span>
+              </div>
+              <div style={{ display: "flex", height: 14, borderRadius: 7, overflow: "hidden", background: BORDER }}>
+                {["green", "yellow", "red"].map((s) => x[s] > 0 && (
+                  <div key={s} title={`${s}: ${x[s]}`} style={{ width: (x[s] / x.total * 100) + "%", background: STATUS[s].color }} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </DashCard>
+
+      <DashCard title="התקלות הנפוצות" icon={<AlertTriangle size={16} />}>
+        {faultCounts.length === 0 ? (
+          <div style={{ color: MUTED, fontSize: 13 }}>אין תקלות מדווחות 🎉</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {faultCounts.map((x) => (
+              <div key={x.k} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ width: 130, fontSize: 12.5, flexShrink: 0 }}>{x.label}</div>
+                <div style={{ flex: 1, background: BORDER, borderRadius: 6, height: 16, overflow: "hidden" }}>
+                  <div style={{ width: (x.n / maxFault * 100) + "%", height: "100%", background: DANGER_BAR }} />
+                </div>
+                <div style={{ width: 26, textAlign: "left", fontSize: 13, fontWeight: 700 }}>{x.n}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </DashCard>
+    </div>
+  );
+}
+
+/* ---------- per-vehicle history ---------- */
+function VehicleHistoryModal({ vehicle, records, onSelect, onClose }) {
+  const list = useMemo(
+    () => records.filter((r) => r.vehicleNumber === vehicle)
+      .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")),
+    [records, vehicle]
+  );
+  const counts = { red: 0, yellow: 0, green: 0 };
+  list.forEach((r) => { counts[r.status] = (counts[r.status] || 0) + 1; });
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+          <div style={{ fontWeight: 800, fontSize: 18 }}>היסטוריית רכב · צ' {vehicle}</div>
+          <button onClick={onClose} className="xbtn"><X size={20} /></button>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 13, color: MUTED, marginBottom: 14 }}>
+          <span>{list.length} טל"תים</span>
+          {["red", "yellow", "green"].map((s) => counts[s] > 0 && (
+            <span key={s} style={{ display: "inline-flex", alignItems: "center", gap: 4, color: STATUS[s].color, fontWeight: 700 }}>
+              <StatusDot status={s} size={9} /> {counts[s]}
+            </span>
+          ))}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {list.map((r) => (
+            <button key={r.id} onClick={() => onSelect(r)} className="reccard">
+              <StatusDot status={r.status} />
+              <div style={{ flex: 1, textAlign: "right", minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 2 }}>
+                  <CompanyBadge company={r.company} />
+                  <span style={{ fontSize: 13, color: MUTED }}>{r.mission}{r.mission === "דורס" && r.doresNumber ? ` (${r.doresNumber})` : ""}</span>
+                </div>
+                <div style={{ fontSize: 13, color: MUTED, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  נהג: {r.driver} · מפקד: {r.commander}
+                </div>
+                <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>{fmtDateTime(r.createdAt)}</div>
+              </div>
+              <ChevronLeft size={20} color={MUTED} />
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -1475,6 +1676,14 @@ function GlobalStyle() {
       .pager-num:hover { border-color: ${ACCENT}; }
       .pager-on { background: ${HEADER}; color: #fff; border-color: ${HEADER}; }
       .pager-ellipsis { color: ${MUTED}; padding: 0 2px; }
+
+      .dbtabs { display: flex; gap: 6px; background: #E9EBEF; border-radius: 11px; padding: 4px; margin-bottom: 14px; }
+      .dbtab {
+        flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+        padding: 9px; border: none; background: transparent; color: ${MUTED}; border-radius: 8px;
+        font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit;
+      }
+      .dbtab-on { background: #fff; color: ${TEXT}; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
     `}</style>
   );
 }
