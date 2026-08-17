@@ -5,7 +5,7 @@ import { pushSupported, isStandalone, getPushState, loadSavedFilters, enablePush
 import {
   Truck, ClipboardCheck, Camera, X, Check, AlertTriangle, ShieldCheck,
   Lock, LogIn, LogOut, Filter, ChevronLeft, Image as ImageIcon, Trash2, ListChecks, Search, CheckCircle2, Video,
-  ShieldAlert, Pencil, Save, WifiOff, CloudUpload, RefreshCw, Bell, BellOff, Smartphone,
+  ShieldAlert, Pencil, Save, WifiOff, CloudUpload, RefreshCw, Bell, BellOff, Smartphone, ChevronRight,
 } from "lucide-react";
 
 // Specific-fault parameters a commander can subscribe to (keys match worker.js)
@@ -725,6 +725,7 @@ function ManagerDatabase({ isAdmin, onLogout, onError, notify }) {
   const [selected, setSelected] = useState(null);
   const [editing, setEditing] = useState(null);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [page, setPage] = useState(0);
   const [q, setQ] = useState("");
   const [fCompany, setFCompany] = useState("");
   const [fDriver, setFDriver] = useState("");
@@ -780,6 +781,17 @@ function ManagerDatabase({ isAdmin, onLogout, onError, notify }) {
     scoped.forEach((r) => { c[r.status] = (c[r.status] || 0) + 1; });
     return c;
   }, [scoped]);
+
+  // UI pagination — 25 reports per page.
+  const PAGE_SIZE = 25;
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageItems = useMemo(
+    () => filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE),
+    [filtered, safePage]
+  );
+  // reset to first page whenever the filter/search changes
+  useEffect(() => { setPage(0); }, [q, fCompany, fDriver, fCommander, fStatus]);
 
   const clearFilters = () => { setQ(""); setFCompany(""); setFDriver(""); setFCommander(""); setFStatus(""); };
   const hasFilters = q || fCompany || fDriver || fCommander || fStatus;
@@ -881,25 +893,31 @@ function ManagerDatabase({ isAdmin, onLogout, onError, notify }) {
           {records.length === 0 ? "עדיין לא נשלחו דיווחים" : "אין דיווחים התואמים לסינון"}
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {filtered.map((r) => (
-            <button key={r.id} onClick={() => setSelected(r)} className="reccard">
-              <span style={{ width: 5, alignSelf: "stretch", borderRadius: 4, background: companyColor(r.company), flexShrink: 0 }} />
-              <StatusDot status={r.status} />
-              <div style={{ flex: 1, textAlign: "right", minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 2 }}>
-                  <span style={{ fontWeight: 700, fontSize: 15 }}>צ' {r.vehicleNumber || "—"}</span>
-                  <CompanyBadge company={r.company} />
+        <>
+          <div style={{ fontSize: 12.5, color: MUTED, margin: "0 2px 8px" }}>
+            מציג {safePage * PAGE_SIZE + 1}–{Math.min(filtered.length, safePage * PAGE_SIZE + PAGE_SIZE)} מתוך {filtered.length}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {pageItems.map((r) => (
+              <button key={r.id} onClick={() => setSelected(r)} className="reccard">
+                <span style={{ width: 5, alignSelf: "stretch", borderRadius: 4, background: companyColor(r.company), flexShrink: 0 }} />
+                <StatusDot status={r.status} />
+                <div style={{ flex: 1, textAlign: "right", minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 2 }}>
+                    <span style={{ fontWeight: 700, fontSize: 15 }}>צ' {r.vehicleNumber || "—"}</span>
+                    <CompanyBadge company={r.company} />
+                  </div>
+                  <div style={{ fontSize: 13, color: MUTED, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {r.mission}{r.mission === "דורס" && r.doresNumber ? ` (${r.doresNumber})` : ""} · נהג: {r.driver} · מפקד: {r.commander}
+                  </div>
+                  <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>{fmtDateTime(r.createdAt)}</div>
                 </div>
-                <div style={{ fontSize: 13, color: MUTED, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {r.mission}{r.mission === "דורס" && r.doresNumber ? ` (${r.doresNumber})` : ""} · נהג: {r.driver} · מפקד: {r.commander}
-                </div>
-                <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>{fmtDateTime(r.createdAt)}</div>
-              </div>
-              <ChevronLeft size={20} color={MUTED} />
-            </button>
-          ))}
-        </div>
+                <ChevronLeft size={20} color={MUTED} />
+              </button>
+            ))}
+          </div>
+          <PaginationBar page={safePage} pageCount={pageCount} onPage={(p) => { setPage(p); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
+        </>
       )}
 
       {selected && (
@@ -1109,6 +1127,32 @@ function EditModal({ record, onSaved, onClose, onError }) {
         </>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ---------- pagination bar ---------- */
+function PaginationBar({ page, pageCount, onPage }) {
+  if (pageCount <= 1) return null;
+  const nums = [];
+  for (let i = 0; i < pageCount; i++) {
+    if (i === 0 || i === pageCount - 1 || Math.abs(i - page) <= 1) nums.push(i);
+    else if (nums[nums.length - 1] !== "…") nums.push("…");
+  }
+  return (
+    <div className="pager">
+      <button className="pager-btn" disabled={page === 0} onClick={() => onPage(page - 1)}>
+        <ChevronRight size={16} /> הקודם
+      </button>
+      <div className="pager-nums">
+        {nums.map((n, i) => n === "…"
+          ? <span key={"e" + i} className="pager-ellipsis">…</span>
+          : <button key={n} className={"pager-num" + (n === page ? " pager-on" : "")} onClick={() => onPage(n)}>{n + 1}</button>
+        )}
+      </div>
+      <button className="pager-btn" disabled={page === pageCount - 1} onClick={() => onPage(page + 1)}>
+        הבא <ChevronLeft size={16} />
+      </button>
     </div>
   );
 }
@@ -1415,6 +1459,22 @@ function GlobalStyle() {
       .toast-ok { background: #2E7D32; }
       .toast-err { background: #C4463A; }
       .toast-offline { background: #B7791F; }
+
+      .pager { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; margin: 16px 0 4px; }
+      .pager-btn {
+        display: inline-flex; align-items: center; gap: 3px; padding: 8px 12px; border-radius: 9px;
+        border: 1px solid ${BORDER}; background: #fff; color: ${TEXT}; font-size: 13.5px; font-weight: 700;
+        cursor: pointer; font-family: inherit;
+      }
+      .pager-btn:disabled { opacity: .45; cursor: default; }
+      .pager-nums { display: flex; align-items: center; gap: 4px; }
+      .pager-num {
+        min-width: 34px; height: 34px; padding: 0 6px; border-radius: 9px; border: 1px solid ${BORDER};
+        background: #fff; color: ${TEXT}; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit;
+      }
+      .pager-num:hover { border-color: ${ACCENT}; }
+      .pager-on { background: ${HEADER}; color: #fff; border-color: ${HEADER}; }
+      .pager-ellipsis { color: ${MUTED}; padding: 0 2px; }
     `}</style>
   );
 }
