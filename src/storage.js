@@ -48,11 +48,27 @@ async function apiList(prefix) {
   if (!res.ok) throw new Error("storage LIST failed");
   return res.json();
 }
-async function apiGetAll(prefix, strip) {
-  const url = `/api/storage-getall?prefix=${encodeURIComponent(prefix || "")}${strip ? `&strip=${encodeURIComponent(strip)}` : ""}`;
+async function apiGetAllPage(prefix, strip, cursor) {
+  const url = `/api/storage-getall?prefix=${encodeURIComponent(prefix || "")}` +
+    (strip ? `&strip=${encodeURIComponent(strip)}` : "") +
+    (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "");
   const res = await fetch(url);
   if (!res.ok) throw new Error("storage GETALL failed");
   return res.json();
+}
+
+// Walk every page (the server returns ~45 records per page + a cursor, to stay
+// under Cloudflare's per-request subrequest limit) and merge into one list.
+async function apiGetAll(prefix, strip) {
+  let items = [];
+  let cursor = null;
+  let guard = 0;
+  do {
+    const page = await apiGetAllPage(prefix, strip, cursor);
+    if (page.items) items = items.concat(page.items);
+    cursor = page.cursor || null;
+  } while (cursor && ++guard < 1000);
+  return { items, prefix, shared: true };
 }
 
 const storage = {

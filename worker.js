@@ -61,13 +61,17 @@ export default {
       return json({ keys, prefix, shared: true });
     }
 
-    // Fetch every value under a prefix in one request. Values are fetched in
-    // PARALLEL. Pass `strip=img` to drop the heavy base64 image fields (the
+    // Fetch values under a prefix, ONE PAGE at a time. Cloudflare's free plan
+    // caps a request at 50 subrequests (each KV read is one), so we read at most
+    // ~45 records per call and return a `cursor` for the client to fetch the
+    // next page. Pass `strip=img` to drop the heavy base64 image fields (the
     // manager list only needs the summary — images load per report on demand).
     if (url.pathname === "/api/storage-getall" && request.method === "GET") {
       const prefix = url.searchParams.get("prefix") || "";
       const strip = url.searchParams.get("strip");
-      const list = await env.TALAT_KV.list({ prefix });
+      const cursor = url.searchParams.get("cursor") || undefined;
+      const limit = 45;
+      const list = await env.TALAT_KV.list({ prefix, limit, cursor });
       const names = list.keys.map((k) => k.name).filter((n) => !n.startsWith("__"));
       const values = await Promise.all(names.map((n) => env.TALAT_KV.get(n)));
       const IMG_FIELDS = ["engineOilImg", "rearSeatsImg", "licenseImg", "talatSheetImg"];
@@ -84,7 +88,13 @@ export default {
         }
         items.push({ key: names[i], value });
       }
-      return json({ items, prefix, shared: true });
+      return json({
+        items,
+        prefix,
+        cursor: list.list_complete ? null : list.cursor,
+        list_complete: !!list.list_complete,
+        shared: true,
+      });
     }
 
     // --- Web Push endpoints ---
