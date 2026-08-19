@@ -361,7 +361,7 @@ function TalatFields({ f, set, errors, onError }) {
           value={f.commander} onChange={(e) => set("commander", e.target.value)} />
       </Section>
 
-      <Section n={6} title="מפלס דלק" id="sec-fuel">
+      <Section n={6} title="מפלס דלק">
         <Choice options={FUEL_LEVELS} value={f.fuel} onChange={(v) => set("fuel", v)} error={errors.fuel} />
       </Section>
 
@@ -369,7 +369,7 @@ function TalatFields({ f, set, errors, onError }) {
         <Choice options={COOLANT_LEVELS} value={f.coolant} onChange={(v) => set("coolant", v)} error={errors.coolant} col />
       </Section>
 
-      <Section n={8} title="מתיזים" hint="בדוק מים, מיכל ווישרים" id="sec-sprayers">
+      <Section n={8} title="מתיזים" hint="בדוק מים, מיכל ווישרים">
         <OkBad value={f.sprayers} onChange={(v) => set("sprayers", v)} error={errors.sprayers} />
       </Section>
 
@@ -377,7 +377,7 @@ function TalatFields({ f, set, errors, onError }) {
         <ImageField value={f.engineOilImg} onChange={(v) => set("engineOilImg", v)} onError={onError} />
       </Section>
 
-      <Section n={10} title="מושבים אחוריים" hint="צלם ובדוק תקינות מושבים אחוריים, תעד אם יש נזק" id="sec-seats">
+      <Section n={10} title="מושבים אחוריים" hint="צלם ובדוק תקינות מושבים אחוריים, תעד אם יש נזק">
         <input className="inp" placeholder="תיאור נזק (אופציונלי)" value={f.rearSeatsDamage}
           onChange={(e) => set("rearSeatsDamage", e.target.value)} />
         <div style={{ height: 10 }} />
@@ -403,15 +403,15 @@ function TalatFields({ f, set, errors, onError }) {
         </div>
       </Section>
 
-      <Section n={13} title="לחץ אוויר בגלגלים" id="sec-tire">
+      <Section n={13} title="לחץ אוויר בגלגלים">
         <OkBad value={f.tirePressure} onChange={(v) => set("tirePressure", v)} error={errors.tirePressure} />
       </Section>
 
-      <Section n={14} title="תאורה" hint="בדוק פנסים קדמיים ואחוריים" id="sec-lights">
+      <Section n={14} title="תאורה" hint="בדוק פנסים קדמיים ואחוריים">
         <OkBad value={f.lights} onChange={(v) => set("lights", v)} error={errors.lights} />
       </Section>
 
-      <Section n={15} title="מנעול לתא מטען" id="sec-trunk">
+      <Section n={15} title="מנעול לתא מטען">
         <Choice options={TRUNK_LOCK} value={f.trunkLock} onChange={(v) => set("trunkLock", v)} error={errors.trunkLock} />
       </Section>
 
@@ -419,7 +419,7 @@ function TalatFields({ f, set, errors, onError }) {
         <ImageField value={f.talatSheetImg} onChange={(v) => set("talatSheetImg", v)} onError={onError} />
       </Section>
 
-      <Section n={17} title="אישור צילום 360°" id="sec-360"
+      <Section n={17} title="אישור צילום 360°"
         hint="אשר/י שצילמת את הרכב 360° (פנים וחוץ) ושלחת סרטון לקבוצת הטל&quot;ת הפלוגתית · חובה — לא ניתן לשלוח טל&quot;ת ללא אישור סרטון 360°">
         <div className={"row2 " + (errors.photo360 ? "field-error" : "")}>
           <button type="button" className={"seg " + (f.photo360 === "מאשר" ? "seg-green" : "")}
@@ -497,8 +497,6 @@ function ReportForm({ onSaved, onOfflineSaved, onError }) {
     <div>
       <IntroCard />
 
-      <VehicleDiagram f={f} onPart={(id) => { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: "smooth", block: "center" }); }} />
-
       <TalatFields f={f} set={set} errors={errors} onError={onError} />
 
       {/* live status preview */}
@@ -517,70 +515,6 @@ function ReportForm({ onSaved, onOfflineSaved, onError }) {
       <button className="submit" disabled={submitting} onClick={submit}>
         {submitting ? "שולח…" : (<><ShieldCheck size={20} /> שליחת טל"ת</>)}
       </button>
-    </div>
-  );
-}
-
-/* ---------- interactive vehicle diagram (live on the form) ---------- */
-function VehicleDiagram({ f, onPart }) {
-  const OK = "#2E9E3B", BAD = "#C4463A", NA = "#8A90A0", NONE = "#D6D9DF";
-  const ob = (v) => (v === "תקין" ? OK : v === "לא תקין" ? BAD : NONE);
-  const lights = ob(f.lights);
-  const tires = ob(f.tirePressure);
-  const sprayers = ob(f.sprayers);
-  const trunk = f.trunkLock === "קיים" ? OK : f.trunkLock === "לא קיים" ? BAD : f.trunkLock === "לא רלוונטי" ? NA : NONE;
-  const seats = (f.rearSeatsDamage && f.rearSeatsDamage.trim()) ? BAD : NONE;
-  const p360 = f.photo360 === "מאשר" ? OK : f.photo360 === "לא מאשר" ? BAD : NONE;
-  const st = { transition: "fill .3s ease" };
-
-  const P = ({ id, label, children }) => (
-    <g onClick={() => onPart && onPart(id)} style={{ cursor: onPart ? "pointer" : "default" }}>
-      <title>{label}</title>
-      {children}
-    </g>
-  );
-
-  return (
-    <div style={{ background: SURFACE, border: "1px solid " + BORDER, borderRadius: 14, padding: "12px 14px", marginBottom: 12 }}>
-      <div style={{ fontWeight: 700, fontSize: 15, display: "flex", alignItems: "center", gap: 6 }}>
-        <Truck size={17} color={ACCENT} /> מצב הרכב
-      </div>
-      <div style={{ fontSize: 12, color: MUTED, margin: "2px 0 6px" }}>מתעדכן תוך כדי מילוי · לחיצה על חלק קופצת לשדה</div>
-      <svg viewBox="0 0 300 182" style={{ width: "100%", maxWidth: 300, display: "block", margin: "0 auto" }}>
-        <P id="sec-360" label="אישור צילום 360°">
-          <ellipse cx="150" cy="93" rx="143" ry="86" fill="none" stroke={p360} strokeWidth="3" strokeDasharray="7 7" style={st} />
-        </P>
-        <P id="sec-tire" label="לחץ אוויר בגלגלים">
-          <rect x="82" y="36" width="13" height="30" rx="5" fill={tires} style={st} />
-          <rect x="205" y="36" width="13" height="30" rx="5" fill={tires} style={st} />
-          <rect x="82" y="120" width="13" height="30" rx="5" fill={tires} style={st} />
-          <rect x="205" y="120" width="13" height="30" rx="5" fill={tires} style={st} />
-        </P>
-        <rect x="95" y="18" width="110" height="152" rx="28" fill="#EEF0F3" stroke="#C7CAD1" strokeWidth="2" />
-        <P id="sec-lights" label="תאורה">
-          <rect x="104" y="20" width="20" height="9" rx="4" fill={lights} style={st} />
-          <rect x="176" y="20" width="20" height="9" rx="4" fill={lights} style={st} />
-          <rect x="104" y="159" width="20" height="9" rx="4" fill={lights} style={st} />
-          <rect x="176" y="159" width="20" height="9" rx="4" fill={lights} style={st} />
-        </P>
-        <P id="sec-sprayers" label="מתיזים (וישרים)">
-          <path d="M112 62 L124 36 L176 36 L188 62 Z" fill={sprayers} opacity="0.92" style={st} />
-        </P>
-        <P id="sec-seats" label="מושבים אחוריים">
-          <rect x="116" y="98" width="30" height="26" rx="5" fill={seats} style={st} />
-          <rect x="154" y="98" width="30" height="26" rx="5" fill={seats} style={st} />
-        </P>
-        <P id="sec-trunk" label="מנעול תא מטען">
-          <rect x="116" y="140" width="68" height="16" rx="5" fill={trunk} style={st} />
-        </P>
-      </svg>
-      <div style={{ display: "flex", justifyContent: "center", gap: 14, marginTop: 6, fontSize: 12, color: MUTED, flexWrap: "wrap" }}>
-        {[["תקין", OK], ["לא תקין", BAD], ["טרם מולא", NONE]].map(([lbl, c]) => (
-          <span key={lbl} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-            <span style={{ width: 10, height: 10, borderRadius: "50%", background: c }} /> {lbl}
-          </span>
-        ))}
-      </div>
     </div>
   );
 }
@@ -661,9 +595,9 @@ function ConfirmationScreen({ record: r, pending, onNew }) {
 }
 
 /* ---------- form building blocks ---------- */
-function Section({ n, title, hint, children, id }) {
+function Section({ n, title, hint, children }) {
   return (
-    <section id={id} style={{ background: SURFACE, border: "1px solid " + BORDER, borderRadius: 14, padding: "14px 16px", marginBottom: 12, scrollMarginTop: 12 }}>
+    <section style={{ background: SURFACE, border: "1px solid " + BORDER, borderRadius: 14, padding: "14px 16px", marginBottom: 12 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: hint ? 4 : 10 }}>
         <span style={{ background: HEADER, color: "#fff", width: 24, height: 24, borderRadius: 7, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, flexShrink: 0 }}>{n}</span>
         <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>{title}</h3>
