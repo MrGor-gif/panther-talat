@@ -72,14 +72,13 @@ const MANAGER_PASSWORD = "talat49"; // צפייה בלבד
 const ADMIN_PASSWORD = "manig49";   // מנהל — עריכה ומחיקה
 
 /* ---------- palette ---------- */
-// Claude / Anthropic palette — warm cream, terracotta accent, warm dark text.
-const ACCENT = "#CC785C";   // Claude terracotta
-const HEADER = "#262624";   // warm near-black
-const PAGE = "#F0EEE6";     // warm cream background
-const SURFACE = "#FFFFFF";  // white cards (pop on cream)
-const BORDER = "#E4DFD3";   // warm border
-const TEXT = "#1F1E1D";     // warm near-black text
-const MUTED = "#736F68";    // warm gray
+const ACCENT = "#E0A32E";
+const HEADER = "#1D2027";
+const PAGE = "#F3F4F6";
+const SURFACE = "#FFFFFF";
+const BORDER = "#E3E5EA";
+const TEXT = "#1D2027";
+const MUTED = "#6B7280";
 const DANGER_BAR = "#C4463A";
 
 const STATUS = {
@@ -303,7 +302,7 @@ function Header({ view, setView }) {
           style={{ height: 48, width: 64, objectFit: "contain", cursor: "pointer", userSelect: "none" }} draggable={false} />
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 800, fontSize: 18, lineHeight: 1.15 }}>טל"ת — בדיקת רכב לפני נסיעה</div>
-          <div style={{ fontSize: 12, color: "#B3ADA1" }}>הפרויקטים של Mr.Gor</div>
+          <div style={{ fontSize: 12, color: "#B9BDC7" }}>הפרויקטים של Mr.Gor</div>
         </div>
         <nav style={{ display: "flex", gap: 6 }}>
           <button className={"navbtn " + (view === "form" ? "navbtn-on" : "")} onClick={() => setView("form")}>
@@ -523,7 +522,7 @@ function ReportForm({ onSaved, onOfflineSaved, onError }) {
 function IntroCard() {
   return (
     <div style={{ background: SURFACE, border: "1px solid " + BORDER, borderRadius: 14, padding: "14px 16px", marginBottom: 16, display: "flex", gap: 12, alignItems: "flex-start" }}>
-      <div style={{ background: ACCENT + "22", color: "#9C4A2E", borderRadius: 10, padding: 9, flexShrink: 0 }}><Truck size={22} /></div>
+      <div style={{ background: ACCENT + "22", color: "#9A6B12", borderRadius: 10, padding: 9, flexShrink: 0 }}><Truck size={22} /></div>
       <div style={{ fontSize: 14, color: MUTED, lineHeight: 1.5 }}>
         מלא/י את בדיקת הרכב לפני נסיעה. שדות חובה מסומנים. בסיום — לחצ/י על <b>שליחת טל"ת</b>. הדיווח יישמר במאגר המרכזי ויקבל חיווי תקינות אוטומטי.
       </div>
@@ -1630,9 +1629,9 @@ function GlobalStyle() {
 
       .submit {
         width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px;
-        padding: 16px; border: none; border-radius: 14px; background: ${ACCENT}; color: #fff;
+        padding: 16px; border: none; border-radius: 14px; background: ${ACCENT}; color: #1D2027;
         font-size: 18px; font-weight: 800; cursor: pointer; font-family: inherit;
-        box-shadow: 0 4px 14px ${ACCENT}44;
+        box-shadow: 0 4px 14px ${ACCENT}55;
       }
       .submit:disabled { opacity: .7; cursor: default; }
 
@@ -1641,7 +1640,7 @@ function GlobalStyle() {
         border: 1px solid #ffffff33; background: transparent; color: #fff; font-size: 14px; font-weight: 600;
         cursor: pointer; font-family: inherit;
       }
-      .navbtn-on { background: ${ACCENT}; color: #fff; border-color: ${ACCENT}; }
+      .navbtn-on { background: ${ACCENT}; color: #1D2027; border-color: ${ACCENT}; }
 
       .reccard {
         display: flex; align-items: center; gap: 12px; width: 100%; text-align: right;
@@ -1701,7 +1700,7 @@ function GlobalStyle() {
       .pager-on { background: ${HEADER}; color: #fff; border-color: ${HEADER}; }
       .pager-ellipsis { color: ${MUTED}; padding: 0 2px; }
 
-      .dbtabs { display: flex; gap: 6px; background: #E7E2D7; border-radius: 11px; padding: 4px; margin-bottom: 14px; }
+      .dbtabs { display: flex; gap: 6px; background: #E9EBEF; border-radius: 11px; padding: 4px; margin-bottom: 14px; }
       .dbtab {
         flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
         padding: 9px; border: none; background: transparent; color: ${MUTED}; border-radius: 8px;
