@@ -6,7 +6,7 @@ import {
   Truck, ClipboardCheck, Camera, X, Check, AlertTriangle, ShieldCheck,
   Lock, LogIn, LogOut, Filter, ChevronLeft, Image as ImageIcon, Trash2, ListChecks, Search, CheckCircle2, Video,
   ShieldAlert, Pencil, Save, WifiOff, CloudUpload, RefreshCw, Bell, BellOff, Smartphone, ChevronRight,
-  BarChart3, TrendingUp,
+  BarChart3, TrendingUp, Moon, Sun, Star, MessageSquare,
 } from "lucide-react";
 
 // Fault conditions per report (mirrors worker.js paramConditions) — for stats.
@@ -72,19 +72,22 @@ const MANAGER_PASSWORD = "talat49"; // צפייה בלבד
 const ADMIN_PASSWORD = "manig49";   // מנהל — עריכה ומחיקה
 
 /* ---------- palette ---------- */
+// Neutrals are CSS variables so a "night mode" class can re-theme the whole app
+// (see the :root / :root.night blocks in GlobalStyle). ACCENT + status .color
+// stay fixed hex because they're used with alpha-append (e.g. ACCENT + "22").
 const ACCENT = "#E0A32E";
-const HEADER = "#1D2027";
-const PAGE = "#F3F4F6";
-const SURFACE = "#FFFFFF";
-const BORDER = "#E3E5EA";
-const TEXT = "#1D2027";
-const MUTED = "#6B7280";
+const HEADER = "var(--header)";
+const PAGE = "var(--page)";
+const SURFACE = "var(--surface)";
+const BORDER = "var(--border)";
+const TEXT = "var(--text)";
+const MUTED = "var(--muted)";
 const DANGER_BAR = "#C4463A";
 
 const STATUS = {
-  red: { label: "לא תקין — דורש התייחסות טנ\"א", color: "#C4463A", bg: "#FBE9E7", dot: "#C4463A" },
-  yellow: { label: "דורש התייחסות ברמת הפלוגה", color: "#B7791F", bg: "#FCF3D9", dot: "#E0A32E" },
-  green: { label: "תקין, ללא תקלות", color: "#2E7D32", bg: "#E7F4E8", dot: "#2E9E3B" },
+  red: { label: "לא תקין — דורש התייחסות טנ\"א", color: "#C4463A", bg: "var(--st-red-bg)", dot: "#C4463A" },
+  yellow: { label: "דורש התייחסות ברמת הפלוגה", color: "#B7791F", bg: "var(--st-yellow-bg)", dot: "#E0A32E" },
+  green: { label: "תקין, ללא תקלות", color: "#2E7D32", bg: "var(--st-green-bg)", dot: "#2E9E3B" },
 };
 
 /* ---------- helpers ---------- */
@@ -195,10 +198,29 @@ export default function App() {
   const [view, setView] = useState("form"); // form | manager
   const [toast, setToast] = useState(null);
   const [pendingCount, setPendingCount] = useState(0);
+  const [night, setNight] = useState(() => { try { return localStorage.getItem("talat-night") === "1"; } catch (e) { return false; } });
+
+  useEffect(() => {
+    try {
+      document.documentElement.classList.toggle("night", night);
+      localStorage.setItem("talat-night", night ? "1" : "0");
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute("content", night ? "#0B0906" : "#1D2027");
+    } catch (e) {}
+  }, [night]);
+
+  const [feedback, setFeedback] = useState(null); // null | "auto" | "manual"
 
   const showToast = (msg, kind = "ok", ms = 3800) => {
     setToast({ msg, kind });
     setTimeout(() => setToast(null), ms);
+  };
+
+  const markFeedbackDone = () => { try { localStorage.setItem("talat-feedback-done", "1"); } catch (e) {} };
+  const closeFeedback = () => { if (feedback === "auto") markFeedbackDone(); setFeedback(null); };
+  // after a submission, ask for feedback once per device
+  const askFeedbackSoon = () => {
+    setTimeout(() => { try { if (localStorage.getItem("talat-feedback-done") !== "1") setFeedback("auto"); } catch (e) {} }, 4500);
   };
 
   async function refreshPending() {
@@ -228,7 +250,7 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh", background: PAGE, color: TEXT, fontFamily: "system-ui, 'Segoe UI', Arial, sans-serif" }}>
       <GlobalStyle />
-      <Header view={view} setView={setView} />
+      <Header view={view} setView={setView} night={night} setNight={setNight} />
       {pendingCount > 0 && (
         <div style={{ background: "#FCF3D9", borderBottom: "1px solid #E0A32E55", color: "#8A5A00" }}>
           <div style={{ maxWidth: 720, margin: "0 auto", padding: "9px 14px", display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, fontWeight: 700 }}>
@@ -244,17 +266,28 @@ export default function App() {
       <main style={{ maxWidth: 720, margin: "0 auto", padding: "16px 14px 60px" }}>
         {view === "form" ? (
           <ReportForm
-            onSaved={() => { showToast("הטל\"ת נשלח ונשמר בהצלחה ✓"); refreshPending(); }}
-            onOfflineSaved={() => { showToast("הטופס נשמר במכשיר וישלח אוטומטית כשתחזור הקליטה", "offline", 5500); refreshPending(); }}
+            onSaved={() => { showToast("הטל\"ת נשלח ונשמר בהצלחה ✓"); refreshPending(); askFeedbackSoon(); }}
+            onOfflineSaved={() => { showToast("הטופס נשמר במכשיר וישלח אוטומטית כשתחזור הקליטה", "offline", 5500); refreshPending(); askFeedbackSoon(); }}
             onError={(m) => showToast(m, "err")}
           />
         ) : (
           <ManagerPage onError={(m) => showToast(m, "err")} notify={(m) => showToast(m)} />
         )}
         <footer style={{ textAlign: "center", color: MUTED, fontSize: 12, marginTop: 28, paddingTop: 16, borderTop: "1px solid " + BORDER }}>
-          אתר זה נבנה ע"י גיא גורליק
+          <button onClick={() => setFeedback("manual")} style={{ background: "none", border: "none", color: ACCENT, cursor: "pointer", fontSize: 12.5, fontWeight: 700, fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 5 }}>
+            <MessageSquare size={13} /> שלח משוב
+          </button>
+          <div style={{ marginTop: 6 }}>אתר זה נבנה ע"י גיא גורליק</div>
         </footer>
       </main>
+      {feedback && (
+        <FeedbackModal
+          onClose={closeFeedback}
+          onDone={() => { markFeedbackDone(); setFeedback(null); }}
+          onError={(m) => showToast(m, "err")}
+          notify={(m) => showToast(m)}
+        />
+      )}
       {toast && (
         <div className={"toast " + (toast.kind === "err" ? "toast-err" : toast.kind === "offline" ? "toast-offline" : "toast-ok")}>
           {toast.kind === "err" ? <AlertTriangle size={18} /> : toast.kind === "offline" ? <WifiOff size={18} /> : <Check size={18} />}
@@ -266,7 +299,7 @@ export default function App() {
 }
 
 /* ---------- header ---------- */
-function Header({ view, setView }) {
+function Header({ view, setView, night, setNight }) {
   const crestRef = useRef(null);
   const clicksRef = useRef(0);
   const timerRef = useRef(null);
@@ -305,6 +338,9 @@ function Header({ view, setView }) {
           <div style={{ fontSize: 12, color: "#B9BDC7" }}>הפרויקטים של Mr.Gor</div>
         </div>
         <nav style={{ display: "flex", gap: 6 }}>
+          <button className="navbtn" onClick={() => setNight(!night)} title={night ? "מצב יום" : "מצב לילה"} aria-label="החלפת מצב לילה" style={{ padding: "8px 10px" }}>
+            {night ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
           <button className={"navbtn " + (view === "form" ? "navbtn-on" : "")} onClick={() => setView("form")}>
             <ClipboardCheck size={16} /> טופס
           </button>
@@ -616,7 +652,7 @@ function CompanyChoice({ value, onChange, error }) {
         const on = value === o;
         return (
           <button type="button" key={o} onClick={() => onChange(o)} className="cchip"
-            style={{ border: "1.5px solid " + (on ? c : BORDER), background: on ? c : "#fff", color: on ? "#fff" : c }}>
+            style={{ border: "1.5px solid " + (on ? c : BORDER), background: on ? c : SURFACE, color: on ? "#fff" : c }}>
             {o}
           </button>
         );
@@ -1041,7 +1077,7 @@ function DetailModal({ record: r, onClose, isAdmin, onEdit, onDelete, onVehicleH
 
         {onVehicleHistory && r.vehicleNumber && (
           <button onClick={() => onVehicleHistory(r.vehicleNumber)}
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 9, border: "1px solid " + BORDER, background: "#fff", color: TEXT, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", marginBottom: 14 }}>
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 9, border: "1px solid " + BORDER, background: SURFACE, color: TEXT, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", marginBottom: 14 }}>
             <ListChecks size={15} /> כל הטל"תים של צ' {r.vehicleNumber}
           </button>
         )}
@@ -1387,7 +1423,7 @@ function NotifChip({ on, color, onClick, children }) {
   return (
     <button type="button" onClick={onClick}
       style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 11px", borderRadius: 9,
-        border: "1.5px solid " + (on ? c : BORDER), background: on ? c : "#fff", color: on ? "#fff" : TEXT,
+        border: "1.5px solid " + (on ? c : BORDER), background: on ? c : SURFACE, color: on ? "#fff" : TEXT,
         fontSize: 13.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
       <span style={{ width: 15, height: 15, borderRadius: 5, border: "1.5px solid " + (on ? "#fff" : BORDER), display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>{on && <Check size={11} />}</span>
       {children}
@@ -1464,12 +1500,12 @@ function NotificationSettingsModal({ isAdmin, onClose, onError, notify }) {
         </div>
 
         {/* help toggle */}
-        <button onClick={() => setShowHelp((v) => !v)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, border: "1px solid " + BORDER, background: "#F8FAFC", color: TEXT, fontWeight: 700, fontSize: 13.5, cursor: "pointer", fontFamily: "inherit", marginBottom: iosNeedsInstall ? 10 : 14 }}>
+        <button onClick={() => setShowHelp((v) => !v)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, border: "1px solid " + BORDER, background: PAGE, color: TEXT, fontWeight: 700, fontSize: 13.5, cursor: "pointer", fontFamily: "inherit", marginBottom: iosNeedsInstall ? 10 : 14 }}>
           <Smartphone size={16} /> איך מפעילים? (אייפון / אנדרואיד)
           <ChevronLeft size={16} style={{ marginRight: "auto", transform: showHelp ? "rotate(-90deg)" : "none", transition: ".15s" }} />
         </button>
         {showHelp && (
-          <div style={{ border: "1px solid " + BORDER, borderRadius: 10, padding: "12px 14px", marginBottom: 14, fontSize: 13, lineHeight: 1.6, background: "#fff" }}>
+          <div style={{ border: "1px solid " + BORDER, borderRadius: 10, padding: "12px 14px", marginBottom: 14, fontSize: 13, lineHeight: 1.6, background: SURFACE }}>
             <div style={{ fontWeight: 800, marginBottom: 4 }}>🍏 אייפון (חובה להתקין קודם):</div>
             <ol style={{ margin: "0 18px 12px 0", padding: 0 }}>
               <li>פתח/י את האתר ב-<b>Safari</b>.</li>
@@ -1571,17 +1607,80 @@ function NotificationSettingsModal({ isAdmin, onClose, onError, notify }) {
   );
 }
 
+/* ---------- feedback / rating ---------- */
+function FeedbackModal({ onClose, onDone, onError, notify }) {
+  const [rating, setRating] = useState(0);
+  const [hover, setHover] = useState(0);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (!rating && !text.trim()) { onDone(); return; } // nothing to send — treat as done
+    setBusy(true);
+    try {
+      const rec = { id: uid(), createdAt: new Date().toISOString(), rating, text: text.trim(), platform: (typeof navigator !== "undefined" ? navigator.userAgent : "") };
+      await window.storage.set("feedback:" + rec.id, JSON.stringify(rec), true);
+      notify && notify("תודה על המשוב! 🙏");
+      onDone();
+    } catch (e) {
+      onError && onError("שליחת המשוב נכשלה — נסה שוב");
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420, borderTop: "5px solid " + ACCENT }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+          <div style={{ fontWeight: 800, fontSize: 18, display: "flex", alignItems: "center", gap: 8 }}>
+            <MessageSquare size={18} /> המשוב שלך
+          </div>
+          <button onClick={onClose} className="xbtn"><X size={20} /></button>
+        </div>
+        <div style={{ fontSize: 13.5, color: MUTED, marginBottom: 16 }}>איך היה? מה אפשר לשפר או להוסיף לאפליקציה?</div>
+
+        <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 16 }}>
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button key={n} type="button" onClick={() => setRating(n)} onMouseEnter={() => setHover(n)} onMouseLeave={() => setHover(0)}
+              style={{ background: "none", border: "none", cursor: "pointer", padding: 2, lineHeight: 0 }} aria-label={n + " כוכבים"}>
+              <Star size={34} strokeWidth={1.6} color={(hover || rating) >= n ? ACCENT : BORDER} fill={(hover || rating) >= n ? ACCENT : "none"} />
+            </button>
+          ))}
+        </div>
+
+        <textarea className="inp" rows={4} placeholder="מה אפשר להוסיף / לשפר? (אופציונלי)" value={text} onChange={(e) => setText(e.target.value)} style={{ marginBottom: 14 }} />
+
+        <button className="submit" disabled={busy} onClick={submit}>
+          <MessageSquare size={18} /> {busy ? "שולח…" : "שליחת משוב"}
+        </button>
+        <button onClick={onClose} style={{ width: "100%", marginTop: 8, background: "none", border: "none", color: MUTED, cursor: "pointer", fontSize: 13.5, fontWeight: 600, fontFamily: "inherit", padding: 6 }}>דלג</button>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- global styles ---------- */
 function GlobalStyle() {
   return (
     <style>{`
+      :root {
+        --page: #F3F4F6; --surface: #FFFFFF; --header: #1D2027; --text: #1D2027;
+        --muted: #6B7280; --border: #E3E5EA; --track: #E9EBEF;
+        --st-red-bg: #FBE9E7; --st-yellow-bg: #FCF3D9; --st-green-bg: #E7F4E8;
+      }
+      :root.night {
+        --page: #0E0B08; --surface: #1A1611; --header: #0B0906; --text: #ECDFCF;
+        --muted: #9B8B79; --border: #342A20; --track: #221C15;
+        --st-red-bg: #2C1512; --st-yellow-bg: #262010; --st-green-bg: #112418;
+      }
+      :root.night img { filter: brightness(0.9); }
       * { box-sizing: border-box; }
-      body { margin: 0; }
+      body { margin: 0; background: var(--page); }
+      html, body { transition: background-color .25s ease; }
       @keyframes talat-spin { to { transform: rotate(360deg); } }
       .spin { animation: talat-spin 0.9s linear infinite; }
       .inp {
         width: 100%; padding: 11px 12px; border: 1px solid ${BORDER}; border-radius: 10px;
-        font-size: 15px; font-family: inherit; background: #fff; color: ${TEXT}; outline: none;
+        font-size: 15px; font-family: inherit; background: var(--surface); color: ${TEXT}; outline: none;
       }
       .inp:focus { border-color: ${ACCENT}; box-shadow: 0 0 0 3px ${ACCENT}22; }
       textarea.inp { resize: vertical; }
@@ -1589,7 +1688,7 @@ function GlobalStyle() {
       .field-error { box-shadow: 0 0 0 3px #C4463A22; border-radius: 10px; }
 
       .chip {
-        padding: 11px 10px; border: 1px solid ${BORDER}; background: #fff; border-radius: 10px;
+        padding: 11px 10px; border: 1px solid ${BORDER}; background: var(--surface); border-radius: 10px;
         font-size: 15px; font-weight: 600; cursor: pointer; color: ${TEXT}; transition: .12s; font-family: inherit;
       }
       .chip:hover { border-color: ${ACCENT}; }
@@ -1604,7 +1703,7 @@ function GlobalStyle() {
       .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; border-radius: 10px; }
       .seg {
         display: flex; align-items: center; justify-content: center; gap: 6px;
-        padding: 12px; border: 1px solid ${BORDER}; background: #fff; border-radius: 10px;
+        padding: 12px; border: 1px solid ${BORDER}; background: var(--surface); border-radius: 10px;
         font-size: 15px; font-weight: 700; cursor: pointer; color: ${TEXT}; font-family: inherit;
       }
       .seg-green { background: ${STATUS.green.bg}; border-color: ${STATUS.green.color}; color: ${STATUS.green.color}; }
@@ -1612,7 +1711,7 @@ function GlobalStyle() {
 
       .toolbtn {
         display: flex; align-items: center; gap: 9px; padding: 11px 12px; border: 1px solid ${BORDER};
-        background: #fff; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
+        background: var(--surface); border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
         color: ${TEXT}; text-align: right; font-family: inherit;
       }
       .toolbtn-on { border-color: ${STATUS.green.color}; background: ${STATUS.green.bg}; }
@@ -1624,7 +1723,7 @@ function GlobalStyle() {
         background: ${HEADER}; color: #fff; border-radius: 10px; font-size: 15px; font-weight: 600;
         cursor: pointer; font-family: inherit;
       }
-      .imgbtn-ghost { background: #fff; color: ${TEXT}; border: 1px solid ${BORDER}; }
+      .imgbtn-ghost { background: var(--surface); color: ${TEXT}; border: 1px solid ${BORDER}; }
       .imgbtn:disabled { opacity: .6; }
 
       .submit {
@@ -1661,12 +1760,12 @@ function GlobalStyle() {
         .overlay { align-items: center; padding: 20px; }
         .sheet { border-radius: 18px; }
       }
-      .xbtn { background: #fff; border: 1px solid ${BORDER}; border-radius: 9px; padding: 6px; cursor: pointer; color: ${TEXT}; display: flex; }
+      .xbtn { background: var(--surface); border: 1px solid ${BORDER}; border-radius: 9px; padding: 6px; cursor: pointer; color: ${TEXT}; display: flex; }
 
       .actbtn {
         flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
         padding: 13px; border-radius: 11px; font-size: 15px; font-weight: 700; cursor: pointer;
-        font-family: inherit; border: 1px solid ${BORDER}; background: #fff; color: ${TEXT};
+        font-family: inherit; border: 1px solid ${BORDER}; background: var(--surface); color: ${TEXT};
       }
       .actbtn:disabled { opacity: .7; cursor: default; }
       .actbtn-edit { background: ${HEADER}; color: #fff; border-color: ${HEADER}; }
@@ -1687,26 +1786,26 @@ function GlobalStyle() {
       .pager { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; margin: 16px 0 4px; }
       .pager-btn {
         display: inline-flex; align-items: center; gap: 3px; padding: 8px 12px; border-radius: 9px;
-        border: 1px solid ${BORDER}; background: #fff; color: ${TEXT}; font-size: 13.5px; font-weight: 700;
+        border: 1px solid ${BORDER}; background: var(--surface); color: ${TEXT}; font-size: 13.5px; font-weight: 700;
         cursor: pointer; font-family: inherit;
       }
       .pager-btn:disabled { opacity: .45; cursor: default; }
       .pager-nums { display: flex; align-items: center; gap: 4px; }
       .pager-num {
         min-width: 34px; height: 34px; padding: 0 6px; border-radius: 9px; border: 1px solid ${BORDER};
-        background: #fff; color: ${TEXT}; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit;
+        background: var(--surface); color: ${TEXT}; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit;
       }
       .pager-num:hover { border-color: ${ACCENT}; }
       .pager-on { background: ${HEADER}; color: #fff; border-color: ${HEADER}; }
       .pager-ellipsis { color: ${MUTED}; padding: 0 2px; }
 
-      .dbtabs { display: flex; gap: 6px; background: #E9EBEF; border-radius: 11px; padding: 4px; margin-bottom: 14px; }
+      .dbtabs { display: flex; gap: 6px; background: var(--track); border-radius: 11px; padding: 4px; margin-bottom: 14px; }
       .dbtab {
         flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
         padding: 9px; border: none; background: transparent; color: ${MUTED}; border-radius: 8px;
         font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit;
       }
-      .dbtab-on { background: #fff; color: ${TEXT}; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+      .dbtab-on { background: var(--surface); color: ${TEXT}; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
     `}</style>
   );
 }
