@@ -779,6 +779,7 @@ function ManagerDatabase({ isAdmin, onLogout, onError, notify }) {
   const [selected, setSelected] = useState(null);
   const [editing, setEditing] = useState(null);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [fbListOpen, setFbListOpen] = useState(false);
   const [vehicleHistory, setVehicleHistory] = useState(null);
   const [tab, setTab] = useState("list"); // list | stats
   const [page, setPage] = useState(0);
@@ -888,6 +889,12 @@ function ManagerDatabase({ isAdmin, onLogout, onError, notify }) {
           background: HEADER, color: "#fff", border: "none", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>
           <Bell size={14} /> התראות
         </button>
+        {isAdmin && (
+          <button onClick={() => setFbListOpen(true)} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999,
+            background: HEADER, color: "#fff", border: "none", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>
+            <MessageSquare size={14} /> משובים
+          </button>
+        )}
         {onLogout && (
           <button onClick={onLogout} style={{ marginRight: "auto", background: "none", border: "none", color: MUTED, cursor: "pointer", fontSize: 13, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
             <LogOut size={14} /> יציאה
@@ -1015,6 +1022,9 @@ function ManagerDatabase({ isAdmin, onLogout, onError, notify }) {
       )}
       {notifOpen && (
         <NotificationSettingsModal isAdmin={isAdmin} onClose={() => setNotifOpen(false)} onError={onError} notify={notify} />
+      )}
+      {fbListOpen && (
+        <FeedbackListModal onClose={() => setFbListOpen(false)} onError={onError} />
       )}
     </div>
   );
@@ -1653,6 +1663,88 @@ function FeedbackModal({ onClose, onDone, onError, notify }) {
           <MessageSquare size={18} /> {busy ? "שולח…" : "שליחת משוב"}
         </button>
         <button onClick={onClose} style={{ width: "100%", marginTop: 8, background: "none", border: "none", color: MUTED, cursor: "pointer", fontSize: 13.5, fontWeight: 600, fontFamily: "inherit", padding: 6 }}>דלג</button>
+      </div>
+    </div>
+  );
+}
+
+function platformFromUA(ua) {
+  ua = ua || "";
+  if (/iphone|ipad|ipod/i.test(ua)) return "אייפון";
+  if (/android/i.test(ua)) return "אנדרואיד";
+  if (/windows/i.test(ua)) return "מחשב (Windows)";
+  if (/mac/i.test(ua)) return "מחשב (Mac)";
+  return "אחר";
+}
+
+function StarRow({ rating, size = 15 }) {
+  return (
+    <span style={{ display: "inline-flex", gap: 1 }}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <Star key={n} size={size} strokeWidth={1.7} color={rating >= n ? ACCENT : BORDER} fill={rating >= n ? ACCENT : "none"} />
+      ))}
+    </span>
+  );
+}
+
+/* ---------- admin feedback viewer ---------- */
+function FeedbackListModal({ onClose, onError }) {
+  const [items, setItems] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await window.storage.getAll("feedback:", true);
+        const list = (res?.items || [])
+          .map((it) => { try { return JSON.parse(it.value); } catch (e) { return null; } })
+          .filter(Boolean)
+          .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+        setItems(list);
+      } catch (e) { onError && onError("טעינת המשובים נכשלה"); setItems([]); }
+    })();
+  }, []);
+
+  const rated = items ? items.filter((f) => f.rating) : [];
+  const avg = rated.length ? (rated.reduce((s, f) => s + f.rating, 0) / rated.length) : 0;
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <div style={{ fontWeight: 800, fontSize: 18, display: "flex", alignItems: "center", gap: 8 }}>
+            <MessageSquare size={19} /> משובים {items ? `(${items.length})` : ""}
+          </div>
+          <button onClick={onClose} className="xbtn"><X size={20} /></button>
+        </div>
+
+        {items === null ? (
+          <div style={{ color: MUTED, padding: "16px 0", display: "flex", alignItems: "center", gap: 8 }}><RefreshCw size={16} className="spin" /> טוען…</div>
+        ) : items.length === 0 ? (
+          <div style={{ textAlign: "center", color: MUTED, padding: 30, background: SURFACE, border: "1px dashed " + BORDER, borderRadius: 12 }}>עדיין לא התקבלו משובים</div>
+        ) : (
+          <>
+            {rated.length > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, background: SURFACE, border: "1px solid " + BORDER, borderRadius: 12, padding: "12px 14px", marginBottom: 12 }}>
+                <div style={{ fontSize: 28, fontWeight: 800, color: ACCENT }}>{avg.toFixed(1)}</div>
+                <div>
+                  <StarRow rating={Math.round(avg)} size={16} />
+                  <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>ממוצע מתוך {rated.length} דירוגים</div>
+                </div>
+              </div>
+            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {items.map((f) => (
+                <div key={f.id} style={{ background: SURFACE, border: "1px solid " + BORDER, borderRadius: 12, padding: "11px 13px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: f.text ? 6 : 0, flexWrap: "wrap" }}>
+                    {f.rating ? <StarRow rating={f.rating} /> : <span style={{ fontSize: 12.5, color: MUTED }}>ללא דירוג</span>}
+                    <span style={{ marginRight: "auto", fontSize: 12, color: MUTED }}>{fmtDateTime(f.createdAt)} · {platformFromUA(f.platform)}</span>
+                  </div>
+                  {f.text && <div style={{ fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{f.text}</div>}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
