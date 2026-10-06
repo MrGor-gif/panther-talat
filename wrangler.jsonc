@@ -11,5 +11,8 @@
       "binding": "TALAT_KV",
       "id": "f7a352c3cd264bb480bcf45c301ae146"
     }
-  ]
+  ],
+  "triggers": {
+    "crons": ["0 */6 * * *"]
+  }
 }

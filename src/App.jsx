@@ -6,7 +6,7 @@ import {
   Truck, ClipboardCheck, Camera, X, Check, AlertTriangle, ShieldCheck,
   Lock, LogIn, LogOut, Filter, ChevronLeft, Image as ImageIcon, Trash2, ListChecks, Search, CheckCircle2, Video,
   ShieldAlert, Pencil, Save, WifiOff, CloudUpload, RefreshCw, Bell, BellOff, Smartphone, ChevronRight,
-  BarChart3, TrendingUp, Moon, Sun, Star, MessageSquare,
+  BarChart3, TrendingUp, Moon, Sun, Star, MessageSquare, Calendar,
 } from "lucide-react";
 
 // Fault conditions per report (mirrors worker.js paramConditions) — for stats.
@@ -878,7 +878,7 @@ function ManagerDatabase({ isAdmin, onLogout, onError, notify }) {
       <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "2px 0 14px", flexWrap: "wrap" }}>
         <ListChecks size={22} color={ACCENT} />
         <h2 style={{ margin: 0, fontSize: 20 }}>מאגר דיווחי טל"ת</h2>
-        <span style={{ color: MUTED, fontSize: 14 }}>({records.length})</span>
+        <span style={{ color: MUTED, fontSize: 14 }}>{records.length} הזנות · השבוע האחרון</span>
         {isAdmin && (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 10px", borderRadius: 999,
             background: ACCENT + "22", color: "#8A5A00", border: "1px solid " + ACCENT + "66", fontWeight: 800, fontSize: 12 }}>
@@ -900,6 +900,10 @@ function ManagerDatabase({ isAdmin, onLogout, onError, notify }) {
             <LogOut size={14} /> יציאה
           </button>
         )}
+      </div>
+
+      <div style={{ fontSize: 12.5, color: MUTED, margin: "-8px 0 12px", display: "flex", alignItems: "center", gap: 6 }}>
+        <Calendar size={13} /> מוצגים דיווחי 7 הימים האחרונים · דיווחים ישנים יותר נמחקים אוטומטית
       </div>
 
       <div className="dbtabs">

@@ -174,7 +174,37 @@ export default {
     // Not an API route - serve the built static site.
     return env.ASSETS.fetch(request);
   },
+
+  // Cron trigger: keep only the last 7 days of reports (see wrangler.jsonc crons).
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(cleanupOldReports(env));
+  },
 };
+
+// Delete טל"ת reports older than 7 days. The age comes from the key itself
+// (uid = base36(Date.now()) + 6 random chars), so no value reads are needed.
+// Capped per run to stay under Cloudflare's per-invocation subrequest limit;
+// the cron runs several times a day to cover any backlog.
+async function cleanupOldReports(env) {
+  const WEEK = 7 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const MAX_DELETES = 45;
+  let cursor;
+  let deleted = 0;
+  do {
+    const list = await env.TALAT_KV.list({ prefix: "talat:", cursor });
+    for (const k of list.keys) {
+      const uid = k.name.slice("talat:".length);
+      const ts = parseInt(uid.slice(0, -6), 36);
+      if (ts > 1.5e12 && ts < 2.0e13 && now - ts > WEEK) {
+        await env.TALAT_KV.delete(k.name);
+        if (++deleted >= MAX_DELETES) return deleted;
+      }
+    }
+    cursor = list.list_complete ? null : list.cursor;
+  } while (cursor);
+  return deleted;
+}
 
 /* ---------------- notification matching ---------------- */
 
