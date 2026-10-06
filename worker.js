@@ -10,6 +10,33 @@ const VAPID_PUBLIC = "BPv9qdmBSm9cas8vW5Hsk4nZL7GjlIJne42mXzUY9ClS-m3TJFHE0nzbj8
 const VAPID_SUBJECT = "mailto:guygula.gula@gmail.com";
 
 const TOOLS = ["מטף", "ג'ק", "ידית הפעלה", "מפתח גלגלים", "אפוד זוהר", "משולש אזהרה"];
+const IMG_FIELDS = ["engineOilImg", "rearSeatsImg", "licenseImg", "talatSheetImg"];
+
+// Build a lightweight summary of a report (everything except the base64 images,
+// with long text truncated) to store as the KV key's metadata. metadata is
+// returned inline by list(), so the manager can load the whole list with a
+// single list() op and ZERO per-record reads (keeps us far under the daily
+// read limit and makes the manager near-instant). Metadata is capped at 1024
+// bytes by KV, so we fall back to a minimal summary if it would overflow.
+function summaryFromValue(value) {
+  let o;
+  try { o = JSON.parse(value); } catch (e) { return null; }
+  const s = {};
+  for (const k in o) if (!IMG_FIELDS.includes(k)) s[k] = o[k];
+  if (s.additionalFaults) s.additionalFaults = String(s.additionalFaults).slice(0, 150);
+  if (s.rearSeatsDamage) s.rearSeatsDamage = String(s.rearSeatsDamage).slice(0, 150);
+  if (JSON.stringify(s).length > 1024) {
+    return {
+      id: o.id, createdAt: o.createdAt, status: o.status, vehicleNumber: o.vehicleNumber,
+      company: o.company, mission: o.mission, doresNumber: o.doresNumber,
+      driver: o.driver, commander: o.commander,
+      fuel: o.fuel, coolant: o.coolant, sprayers: o.sprayers, tirePressure: o.tirePressure,
+      lights: o.lights, trunkLock: o.trunkLock, photo360: o.photo360, tools: o.tools,
+      rearSeatsDamage: o.rearSeatsDamage ? "x" : "", additionalFaults: o.additionalFaults ? "x" : "",
+    };
+  }
+  return s;
+}
 
 export default {
   async fetch(request, env, ctx) {
@@ -36,8 +63,16 @@ export default {
         }
         // Only a brand-new report (key didn't exist yet) triggers notifications
         // — edits/overwrites must not fire a push.
-        const isNewReport = key.startsWith("talat:") ? (await env.TALAT_KV.get(key)) === null : false;
-        await env.TALAT_KV.put(key, value);
+        const isTalat = key.startsWith("talat:");
+        const isNewReport = isTalat ? (await env.TALAT_KV.get(key)) === null : false;
+        // Store the summary as metadata so the manager list loads via list()
+        // alone (no per-record reads).
+        let putOpts;
+        if (isTalat) {
+          const summary = summaryFromValue(value);
+          if (summary) putOpts = { metadata: summary };
+        }
+        await env.TALAT_KV.put(key, value, putOpts);
         if (isNewReport) {
           try {
             const report = JSON.parse(value);
@@ -70,22 +105,42 @@ export default {
       const prefix = url.searchParams.get("prefix") || "";
       const strip = url.searchParams.get("strip");
       const cursor = url.searchParams.get("cursor") || undefined;
+
+      // Fast path: the manager asks for image-stripped summaries. Serve them
+      // from the key metadata returned by list() — no per-record reads at all.
+      // (Up to 40 un-migrated keys per page are read as a fallback, so an
+      // un-backfilled DB still works; after a backfill there are none.)
+      if (strip === "img") {
+        const list = await env.TALAT_KV.list({ prefix, limit: 1000, cursor });
+        const names = list.keys.filter((k) => !k.name.startsWith("__"));
+        const items = [];
+        let fallback = 0;
+        for (const k of names) {
+          if (k.metadata) {
+            items.push({ key: k.name, value: JSON.stringify(k.metadata) });
+          } else if (fallback < 40) {
+            fallback++;
+            const v = await env.TALAT_KV.get(k.name);
+            if (v !== null) {
+              const summary = summaryFromValue(v);
+              items.push({ key: k.name, value: JSON.stringify(summary || {}) });
+            }
+          } else {
+            items.push({ key: k.name, value: JSON.stringify({ id: k.name.replace(/^talat:/, "") }) });
+          }
+        }
+        return json({ items, prefix, cursor: list.list_complete ? null : list.cursor, list_complete: !!list.list_complete, shared: true });
+      }
+
+      // Slow path (non-stripped): read each value (used for small prefixes like feedback:).
       const limit = 45;
       const list = await env.TALAT_KV.list({ prefix, limit, cursor });
       const names = list.keys.map((k) => k.name).filter((n) => !n.startsWith("__"));
       const values = await Promise.all(names.map((n) => env.TALAT_KV.get(n)));
-      const IMG_FIELDS = ["engineOilImg", "rearSeatsImg", "licenseImg", "talatSheetImg"];
       const items = [];
       for (let i = 0; i < names.length; i++) {
         let value = values[i];
         if (value === null) continue;
-        if (strip === "img") {
-          try {
-            const obj = JSON.parse(value);
-            for (const f of IMG_FIELDS) delete obj[f];
-            value = JSON.stringify(obj);
-          } catch (e) { /* leave as-is */ }
-        }
         items.push({ key: names[i], value });
       }
       return json({
@@ -95,6 +150,28 @@ export default {
         list_complete: !!list.list_complete,
         shared: true,
       });
+    }
+
+    // One-time migration: attach summary metadata to existing reports that lack
+    // it, in small server-side batches (gentle — no client transfer). Call
+    // repeatedly with ?pw=<admin> until `remaining` is 0.
+    if (url.pathname === "/api/backfill-meta" && request.method === "GET") {
+      const pw = url.searchParams.get("pw");
+      const adminPw = await env.TALAT_KV.get("__admin_pw__");
+      if (!adminPw || pw !== adminPw) return json({ error: "forbidden" }, 403);
+      const list = await env.TALAT_KV.list({ prefix: "talat:", limit: 1000 });
+      const missing = list.keys.filter((k) => !k.metadata);
+      let done = 0;
+      for (const k of missing) {
+        if (done >= 20) break;
+        const v = await env.TALAT_KV.get(k.name);
+        if (v !== null) {
+          const s = summaryFromValue(v);
+          await env.TALAT_KV.put(k.name, v, s ? { metadata: s } : undefined);
+          done++;
+        }
+      }
+      return json({ done, remaining: Math.max(0, missing.length - done), totalKeys: list.keys.length });
     }
 
     // --- Web Push endpoints ---

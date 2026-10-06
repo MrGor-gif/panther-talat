@@ -1035,10 +1035,10 @@ function ManagerDatabase({ isAdmin, onLogout, onError, notify }) {
 }
 
 function DetailModal({ record: r, onClose, isAdmin, onEdit, onDelete, onVehicleHistory }) {
-  const { status, reasons } = computeStatus(r);
-  // The list is loaded without images (for speed) — fetch the full record now
-  // to show its photos.
+  // The list is loaded as lightweight summaries (no images, long text truncated)
+  // — fetch the full record now for the photos and the complete field values.
   const [full, setFull] = useState(r);
+  const { status, reasons } = computeStatus(full);
   const [imgLoading, setImgLoading] = useState(true);
   useEffect(() => {
     let alive = true;
@@ -1060,22 +1060,22 @@ function DetailModal({ record: r, onClose, isAdmin, onEdit, onDelete, onVehicleH
   ].filter(([, v]) => v);
 
   const rows = [
-    ["מספר צ' רכב", r.vehicleNumber],
-    ["פלוגה", r.company],
-    ["משימה", r.mission + (r.mission === "דורס" && r.doresNumber ? ` — דורס ${r.doresNumber}` : "")],
-    ["שם נהג", r.driver],
-    ["שם מפקד נסיעה", r.commander],
-    ["מפלס דלק", r.fuel],
-    ["מפלס מי קירור", r.coolant],
-    ["מתיזים", r.sprayers],
-    ["נזק במושבים אחוריים", r.rearSeatsDamage || "לא דווח"],
-    ["כלי עבודה", (r.tools && r.tools.length) ? r.tools.join(", ") : "לא סומנו"],
-    ["כלים חסרים", TOOLS.filter((t) => !(r.tools || []).includes(t)).join(", ") || "אין"],
-    ["לחץ אוויר בגלגלים", r.tirePressure],
-    ["תאורה", r.lights],
-    ["מנעול תא מטען", r.trunkLock],
-    ["אישור צילום 360°", r.photo360],
-    ["תקלות נוספות", r.additionalFaults || "אין"],
+    ["מספר צ' רכב", full.vehicleNumber],
+    ["פלוגה", full.company],
+    ["משימה", full.mission + (full.mission === "דורס" && full.doresNumber ? ` — דורס ${full.doresNumber}` : "")],
+    ["שם נהג", full.driver],
+    ["שם מפקד נסיעה", full.commander],
+    ["מפלס דלק", full.fuel],
+    ["מפלס מי קירור", full.coolant],
+    ["מתיזים", full.sprayers],
+    ["נזק במושבים אחוריים", full.rearSeatsDamage || "לא דווח"],
+    ["כלי עבודה", (full.tools && full.tools.length) ? full.tools.join(", ") : "לא סומנו"],
+    ["כלים חסרים", TOOLS.filter((t) => !(full.tools || []).includes(t)).join(", ") || "אין"],
+    ["לחץ אוויר בגלגלים", full.tirePressure],
+    ["תאורה", full.lights],
+    ["מנעול תא מטען", full.trunkLock],
+    ["אישור צילום 360°", full.photo360],
+    ["תקלות נוספות", full.additionalFaults || "אין"],
   ];
 
   return (
